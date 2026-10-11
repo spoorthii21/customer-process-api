@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- GET /customers/{customerId} -->
+    <flow name="get:\customers\(customerId):customer-process-apiraml-config">
+
+        <!-- 1. Log incoming request -->
+        <logger level="INFO" doc:name="Log Customer Profile Request" message="Process Layer: Fetching profile for Customer ID: #[attributes.uriParams.customerId]"/>
+
+        <!-- 2. Store URI parameter -->
+        <set-variable doc:name="Set Customer ID" variableName="customerId" value="#[attributes.uriParams.customerId]"/>
+
+        <!-- 3. Call the System API with Safe Validation Guards -->
+        <http:request method="GET" doc:name="Call SAPI GET Contact By ID" config-ref="salesforceSysApiRequestConfig" path="/contacts/{id}">
+            <http:uri-params><![CDATA[#[output application/java
+---
+{
+	"id" : vars.customerId
+}]]]></http:uri-params>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+
+        <!-- 4. SAFE VARIABLE TRACKER: Stores the status code and parsed body text separately -->
+        <set-variable value="#[attributes.statusCode]" doc:name="Set Backend Status Code" variableName="backendStatusCode"/>
+
+        <!-- 5. Log response status without logging sensitive profile data -->
+        <logger level="INFO" doc:name="Log SAPI Response Status" message="Process Layer: SAPI customer lookup returned HTTP status #[vars.backendStatusCode]"/>
+
+        <!-- 6. Decide between error and success response -->
+        <choice doc:name="Customer Profile Found?">
+
+            <!-- Error branch: If HTTP status is 400+ or payload has an error status flag -->
+            <when expression='#[vars.backendStatusCode &gt;= 400&#10;or&#10;(payload.status default "failed") != "success"]'>
+
+                <logger level="WARN" doc:name="Log Customer Lookup Failure" message="Process Layer: Customer profile lookup failed for ID #[vars.customerId]. Backend status: #[vars.backendStatusCode]"/>
+
+                <!-- Preserve the structured SAPI error -->
+                <ee:transform doc:name="Transform Customer Error Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+var backendStatus = vars.backendStatusCode default 500
+var backendBody = payload default {}
+
+---
+{
+    status: "failed",
+    errorCode: backendBody.errorCode default (
+        if (backendStatus == 400)
+            "INVALID_CUSTOMER_ID"
+        else if (backendStatus == 404)
+            "CUSTOMER_NOT_FOUND"
+        else if (backendStatus == 503)
+            "SYSTEM_API_UNAVAILABLE"
+        else
+            "CUSTOMER_PROFILE_RETRIEVAL_FAILED"
+    ),
+    message: backendBody.message default (
+        if (backendStatus == 400)
+            "The supplied customer ID is malformed or invalid."
+        else if (backendStatus == 404)
+            "Customer profile with ID '" ++
+            (vars.customerId default "") ++
+            "' does not exist."
+        else if (backendStatus == 503)
+            "Customer profile service is temporarily unavailable."
+        else
+            "Unable to retrieve the customer profile."
+    ),
+    errorDescription:
+        backendBody.errorDescription
+            default "Customer profile retrieval failed in the Process API.",
+    correlationId:
+        backendBody.correlationId
+            default correlationId
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+vars.backendStatusCode default 500]]></ee:set-variable>
+						<ee:set-variable variableName="backendStatusCode" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.backendStatusCode default 500]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </when>
+
+            <!-- Successful customer profile path -->
+            <when expression='#[isEmpty(payload.data.contactId default "")]'>
+				<logger level="INFO" doc:name="Logger" doc:id="3b1b4aa2-a08a-43df-8e2d-5db797f2bc91" message="Process Layer: No customer profile found for ID #[vars.customerId]"/>
+				<ee:transform doc:name="Transform Message" doc:id="76b449a4-8be6-43e6-b0ec-9b476d12dbfc" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "failed",
+    errorCode: "CUSTOMER_NOT_FOUND",
+    message: "Customer profile with ID '" ++
+        (vars.customerId default "") ++
+        "' does not exist.",
+    errorDescription: "No customer record was returned by the System API.",
+    correlationId: correlationId
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="httpStatus" ><![CDATA[%dw 2.0
+output application/java
+---
+404]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise>
+
+                <logger level="INFO" doc:name="Log Customer Profile Success" message="Process Layer: Customer profile found successfully for ID #[vars.customerId]"/>
+
+                <ee:transform doc:name="Transform Customer Profile Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "success",
+    message: "Customer profile retrieved successfully.",
+    data: {
+        contactId: payload.data.contactId default vars.customerId,
+        firstName: payload.data.firstName default "",
+        lastName: payload.data.lastName default "",
+        email: payload.data.email default "",
+        accountId: payload.data.accountId default ""
+    }
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[%dw 2.0
+output application/java
+---
+200]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </otherwise>
+        </choice>
+
+        <!-- 7. Final completion logger -->
+        <logger level="INFO" doc:name="Log Profile Flow Completion" message="Process Layer: Customer profile retrieval flow completed with HTTP status #[vars.httpStatus default 200]"/>
+
+    </flow>
+
+    <!-- POST /customers -->
+    <flow name="post:\customers:application\json:customer-process-apiraml-config">
+        <logger level="INFO" message="Customer Orchestration Process Started" />
+
+        <!-- Save incoming Postman data for use across all check sub-flows -->
+        <set-variable value="#[payload]" doc:name="Backup Inbound Payload" variableName="originalPayload"/>
+
+        <!-- STEP A: Check & Create Account if Missing -->
+        <flow-ref doc:name="Call Account Processing" name="process-account-logic-sub-flow"/>
+
+        <!-- STEP B: Check, Reject Duplicate, or Create Contact -->
+        <flow-ref doc:name="Call Contact Processing" name="process-contact-logic-sub-flow"/>
+
+        <!-- Transform Final Success Response for Postman -->
+        <ee:transform doc:name="Transform Success Response" doc:id="0b80055f-3c11-4582-9ce8-bd85e6e63d90">
+            <ee:message >
+                <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"status": "success",
+	"message": "Customer orchestration process completed successfully.",
+	"data": {
+		"accountId": vars.finalAccountId,
+		"contactId": vars.finalContactId
+	}
+}]]></ee:set-payload>
+            </ee:message>
+            <ee:variables >
+                <ee:set-variable variableName="httpStatus"><![CDATA[201]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+    </flow>
+
+</mule>

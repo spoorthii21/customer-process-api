@@ -1,0 +1,708 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd 
+        http://www.mulesoft.org/schema/mule/core
+        http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit
+        http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools
+        http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+        http://www.mulesoft.org/schema/mule/http
+        http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <munit:config name="customers-flows-suite.xml"/>
+
+    <!-- ============================================================= -->
+    <!-- TEST 1: GET CUSTOMER SUCCESS                                  -->
+    <!-- ============================================================= -->
+
+    <munit:test
+        name="get-customer-success"
+        description="GET customer returns valid customer data">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                processor="http:request"
+                doc:name="Mock GET Contact Success">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:payload
+                        mediaType="application/java"
+                        value='#[{
+                            status: "success",
+                            data: {
+                                contactId: "003bm000022PMWDAA4",
+                                firstName: "John",
+                                lastName: "Doe",
+                                email: "john.doe@example.com",
+                                accountId: "001bm00000ABC123"
+                            }
+                        }]'/>
+
+                    <munit-tools:attributes
+                        mediaType="application/java"
+                        value="#[{
+                            statusCode: 200
+                        }]"/>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set GET Customer Request">
+
+                <munit:payload
+                    mediaType="application/java"
+                    value="#[{}]"/>
+
+                <munit:attributes
+                    mediaType="application/java"
+                    value='#[{
+                        uriParams: {
+                            customerId: "003bm000022PMWDAA4"
+                        }
+                    }]'/>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute GET Customer Flow"
+                name="get:\customers\(customerId):customer-process-apiraml-config"/>
+
+        </munit:execution>
+
+        <munit:validation>
+
+            <munit-tools:assert-that
+                doc:name="Assert GET Status Success"
+                expression="#[payload.status]"
+                is='#[MunitTools::equalTo("success")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert GET Success Message"
+                expression="#[payload.message]"
+                is='#[MunitTools::equalTo(
+                    "Customer profile retrieved successfully."
+                )]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Contact ID"
+                expression="#[payload.data.contactId]"
+                is='#[MunitTools::equalTo("003bm000022PMWDAA4")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert First Name"
+                expression="#[payload.data.firstName]"
+                is='#[MunitTools::equalTo("John")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Last Name"
+                expression="#[payload.data.lastName]"
+                is='#[MunitTools::equalTo("Doe")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Email"
+                expression="#[payload.data.email]"
+                is='#[MunitTools::equalTo("john.doe@example.com")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Account ID"
+                expression="#[payload.data.accountId]"
+                is='#[MunitTools::equalTo("001bm00000ABC123")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert HTTP Status 200"
+                expression="#[vars.httpStatus default null]"
+                is="#[MunitTools::equalTo(200)]"/>
+
+            <munit-tools:verify-call
+                doc:name="Verify GET Contact Called Once"
+                processor="http:request"
+                times="1">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+            </munit-tools:verify-call>
+
+        </munit:validation>
+
+    </munit:test>
+
+    <!-- ============================================================= -->
+    <!-- TEST 2: GET INVALID CUSTOMER ID                              -->
+    <!-- ============================================================= -->
+
+    <munit:test
+        name="get-customer-invalid-id"
+        description="GET customer maps HTTP 400 response">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                processor="http:request"
+                doc:name="Mock GET Contact Invalid ID">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:payload
+                        mediaType="application/java"
+                        value='#[{
+                            status: "failed",
+                            errorCode: "INVALID_CUSTOMER_ID",
+                            message:
+                                "The supplied customer ID is malformed or invalid.",
+                            errorDescription:
+                                "The customer identifier is not valid.",
+                            correlationId: "munit-invalid-customer-id"
+                        }]'/>
+
+                    <munit-tools:attributes
+                        mediaType="application/java"
+                        value="#[{
+                            statusCode: 400
+                        }]"/>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set Invalid Customer Request">
+
+                <munit:payload
+                    mediaType="application/java"
+                    value="#[{}]"/>
+
+                <munit:attributes
+                    mediaType="application/java"
+                    value='#[{
+                        uriParams: {
+                            customerId: "INVALID"
+                        }
+                    }]'/>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute GET Customer Flow"
+                name="get:\customers\(customerId):customer-process-apiraml-config"/>
+
+        </munit:execution>
+
+        <munit:validation>
+
+            <munit-tools:assert-that
+                doc:name="Assert Failed Status"
+                expression="#[payload.status]"
+                is='#[MunitTools::equalTo("failed")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Invalid Customer ID"
+                expression="#[payload.errorCode]"
+                is='#[MunitTools::equalTo("INVALID_CUSTOMER_ID")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert HTTP Status 400"
+                expression="#[vars.httpStatus default null]"
+                is="#[MunitTools::equalTo(400)]"/>
+
+            <munit-tools:verify-call
+                processor="http:request"
+                times="1">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+            </munit-tools:verify-call>
+
+        </munit:validation>
+
+    </munit:test>
+
+    <!-- ============================================================= -->
+    <!-- TEST 3: GET CUSTOMER NOT FOUND                               -->
+    <!-- ============================================================= -->
+
+    <munit:test
+        name="get-customer-not-found"
+        description="GET customer maps HTTP 404 response">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                processor="http:request"
+                doc:name="Mock GET Contact Not Found">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:payload
+                        mediaType="application/java"
+                        value='#[{
+                            status: "failed",
+                            errorCode: "CUSTOMER_NOT_FOUND",
+                            message: "Customer profile not found.",
+                            errorDescription:
+                                "No customer record was returned by the System API.",
+                            correlationId: "munit-customer-not-found"
+                        }]'/>
+
+                    <munit-tools:attributes
+                        mediaType="application/java"
+                        value="#[{
+                            statusCode: 404
+                        }]"/>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set Customer Not Found Request">
+
+                <munit:payload
+                    mediaType="application/java"
+                    value="#[{}]"/>
+
+                <munit:attributes
+                    mediaType="application/java"
+                    value='#[{
+                        uriParams: {
+                            customerId: "003bm00000NotFound"
+                        }
+                    }]'/>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute GET Customer Flow"
+                name="get:\customers\(customerId):customer-process-apiraml-config"/>
+
+        </munit:execution>
+
+        <munit:validation>
+
+            <munit-tools:assert-that
+                doc:name="Assert Not Found Status"
+                expression="#[payload.status]"
+                is='#[MunitTools::equalTo("failed")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Customer Not Found"
+                expression="#[payload.errorCode]"
+                is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert HTTP Status 404"
+                expression="#[vars.httpStatus default null]"
+                is="#[MunitTools::equalTo(404)]"/>
+
+        </munit:validation>
+
+    </munit:test>
+
+    <!-- ============================================================= -->
+    <!-- TEST 4: GET EMPTY CUSTOMER RECORD                            -->
+    <!-- ============================================================= -->
+
+    <munit:test
+        name="get-customer-empty-record"
+        description="GET customer maps empty contact record to 404">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                processor="http:request"
+                doc:name="Mock GET Contact Empty Record">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:payload
+                        mediaType="application/java"
+                        value='#[{
+                            status: "success",
+                            data: {
+                                contactId: "",
+                                firstName: "",
+                                lastName: "",
+                                email: "",
+                                accountId: ""
+                            }
+                        }]'/>
+
+                    <munit-tools:attributes
+                        mediaType="application/java"
+                        value="#[{
+                            statusCode: 200
+                        }]"/>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set Empty Customer Request">
+
+                <munit:payload
+                    mediaType="application/java"
+                    value="#[{}]"/>
+
+                <munit:attributes
+                    mediaType="application/java"
+                    value='#[{
+                        uriParams: {
+                            customerId: "003bm00000EmptyAAA"
+                        }
+                    }]'/>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute GET Customer Flow"
+                name="get:\customers\(customerId):customer-process-apiraml-config"/>
+
+        </munit:execution>
+
+        <munit:validation>
+
+            <munit-tools:assert-that
+                doc:name="Assert Empty Record Failed"
+                expression="#[payload.status]"
+                is='#[MunitTools::equalTo("failed")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Empty Record Not Found"
+                expression="#[payload.errorCode]"
+                is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Empty Record HTTP Status"
+                expression="#[vars.httpStatus default null]"
+                is="#[MunitTools::equalTo(404)]"/>
+
+        </munit:validation>
+
+    </munit:test>
+
+    <!-- ============================================================= -->
+    <!-- TEST 5: GET SYSTEM API UNAVAILABLE                           -->
+    <!-- ============================================================= -->
+
+    <munit:test
+        name="get-customer-service-unavailable"
+        description="GET customer maps HTTP 503 response">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                processor="http:request"
+                doc:name="Mock GET Contact Service Unavailable">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:payload
+                        mediaType="application/java"
+                        value='#[{
+                            status: "failed"
+                        }]'/>
+
+                    <munit-tools:attributes
+                        mediaType="application/java"
+                        value="#[{
+                            statusCode: 503
+                        }]"/>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set Service Unavailable Request">
+
+                <munit:payload
+                    mediaType="application/java"
+                    value="#[{}]"/>
+
+                <munit:attributes
+                    mediaType="application/java"
+                    value='#[{
+                        uriParams: {
+                            customerId: "003bm000022PMWDAA4"
+                        }
+                    }]'/>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute GET Customer Flow"
+                name="get:\customers\(customerId):customer-process-apiraml-config"/>
+
+        </munit:execution>
+
+        <munit:validation>
+
+            <munit-tools:assert-that
+                doc:name="Assert Service Unavailable Failed"
+                expression="#[payload.status]"
+                is='#[MunitTools::equalTo("failed")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert System API Unavailable"
+                expression="#[payload.errorCode]"
+                is='#[MunitTools::equalTo("SYSTEM_API_UNAVAILABLE")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert HTTP Status 503"
+                expression="#[vars.httpStatus default null]"
+                is="#[MunitTools::equalTo(503)]"/>
+
+        </munit:validation>
+
+    </munit:test>
+
+    <!-- ============================================================= -->
+    <!-- TEST 6: GET HTTP CONNECTIVITY ERROR                          -->
+    <!-- ============================================================= -->
+
+    <munit:test
+        name="get-customer-connectivity-error"
+        description="GET customer propagates HTTP connectivity error"
+        expectedErrorType="HTTP:CONNECTIVITY">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                processor="http:request"
+                doc:name="Mock GET Contact Connectivity Error">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+                    <munit-tools:error typeId="HTTP:CONNECTIVITY"/>
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set Connectivity Error Request">
+
+                <munit:payload
+                    mediaType="application/java"
+                    value="#[{}]"/>
+
+                <munit:attributes
+                    mediaType="application/java"
+                    value='#[{
+                        uriParams: {
+                            customerId: "003bm000022PMWDAA4"
+                        }
+                    }]'/>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute GET Customer Flow"
+                name="get:\customers\(customerId):customer-process-apiraml-config"/>
+
+        </munit:execution>
+
+    </munit:test>
+
+    <!-- ============================================================= -->
+    <!-- TEST 7: POST CUSTOMER SUCCESS                                -->
+    <!-- ============================================================= -->
+
+    <munit:test
+        name="post-customer-success"
+        description="POST customer completes orchestration successfully">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                processor="flow-ref"
+                doc:name="Mock Account Processing Success">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call Account Processing"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:variables>
+                        <munit-tools:variable
+                            key="finalAccountId"
+                            value='#["001bm00000ABC123"]'
+                            mediaType="application/java"/>
+                    </munit-tools:variables>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+            <munit-tools:mock-when
+                processor="flow-ref"
+                doc:name="Mock Contact Processing Success">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call Contact Processing"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:variables>
+                        <munit-tools:variable
+                            key="finalContactId"
+                            value='#["003bm000022PMWDAA4"]'
+                            mediaType="application/java"/>
+                    </munit-tools:variables>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set POST Customer Request">
+
+                <munit:payload
+                    mediaType="application/java"
+                    value='#[{
+                        accountName: "Acme Corp",
+                        firstName: "Jane",
+                        lastName: "Smith",
+                        email: "jane.smith@acme.com"
+                    }]'/>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute POST Customer Flow"
+                name="post:\customers:application\json:customer-process-apiraml-config"/>
+
+        </munit:execution>
+
+        <munit:validation>
+
+            <munit-tools:assert-that
+                doc:name="Assert POST Success"
+                expression="#[payload.status]"
+                is='#[MunitTools::equalTo("success")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Final Account ID"
+                expression="#[payload.data.accountId]"
+                is='#[MunitTools::equalTo("001bm00000ABC123")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Final Contact ID"
+                expression="#[payload.data.contactId]"
+                is='#[MunitTools::equalTo("003bm000022PMWDAA4")]'/>
+
+            <munit-tools:assert-that
+                doc:name="Assert HTTP Status 201"
+                expression="#[vars.httpStatus default null]"
+                is="#[MunitTools::equalTo(201)]"/>
+
+            <munit-tools:verify-call
+                processor="flow-ref"
+                times="1">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call Account Processing"/>
+                </munit-tools:with-attributes>
+
+            </munit-tools:verify-call>
+
+            <munit-tools:verify-call
+                processor="flow-ref"
+                times="1">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call Contact Processing"/>
+                </munit-tools:with-attributes>
+
+            </munit-tools:verify-call>
+
+        </munit:validation>
+
+    </munit:test>
+
+</mule>

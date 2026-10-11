@@ -1,0 +1,179 @@
+name: CI — customer-process-api
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Expose Anypoint credentials as environment variables so Maven can
+    # expand ${env.ANYPOINT_USERNAME} / ${env.ANYPOINT_PASSWORD} in
+    # settings.xml for the anypoint-exchange-v3 repository.
+    env:
+      ANYPOINT_USERNAME: ${{ secrets.ANYPOINT_USERNAME }}
+      ANYPOINT_PASSWORD: ${{ secrets.ANYPOINT_PASSWORD }}
+
+    steps:
+
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Java 17 (Temurin) with Maven dependency cache ─────────────────
+      - name: Set up Java 17 (Temurin) with Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # ── 3. Safe environment info ─────────────────────────────────────────
+      - name: Display Java and Maven versions
+        run: |
+          java -version
+          mvn -B --version
+
+      # ── 4. Create temporary Maven settings.xml ───────────────────────────
+      # The heredoc uses single-quoted 'EOF' so the shell does NOT expand
+      # ${env.ANYPOINT_USERNAME} — Maven reads those as Maven property
+      # expressions and resolves them from the process environment at runtime.
+      # The closing EOF must be at column 0 after YAML strips leading spaces.
+      - name: Create Maven settings.xml
+        run: |
+          mkdir -p "$HOME/.m2"
+          cat > "$HOME/.m2/settings.xml" <<'EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                    https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>anypoint-exchange-v3</id>
+                <username>${env.ANYPOINT_USERNAME}</username>
+                <password>${env.ANYPOINT_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+
+      # ── 5. Validate settings.xml (XML syntax only, no secret output) ─────
+      - name: Validate settings.xml (XML syntax only, no secret output)
+        run: >-
+          python3 -c
+          "import xml.etree.ElementTree as ET;
+          ET.parse('$HOME/.m2/settings.xml');
+          print('settings.xml is well-formed XML')"
+
+      # ── 6. Maven validate ────────────────────────────────────────────────
+      - name: Maven validate
+        run: mvn -B -ntp -s "$HOME/.m2/settings.xml" validate
+
+      # ── 7. MUnit tests and coverage ──────────────────────────────────────
+      # Runs all three suites: customers-flows-suite.xml, cases-flows-suite.xml,
+      # subflows-suite.xml via the standard Maven test lifecycle.
+      # Coverage is enabled (runCoverage=true, format=html) with no
+      # threshold configured, so the build fails only on test failures.
+      - name: Run MUnit tests and coverage
+        run: mvn -B -ntp -s "$HOME/.m2/settings.xml" clean test
+
+      # ── 8. Discover MUnit report files (informational only) ──────────────
+      - name: Discover MUnit report files
+        if: always()
+        run: |
+          echo "=== MUnit report discovery ==="
+          find target -maxdepth 5 -type f \
+            \( -name "*.xml" -o -name "*.html" -o -name "*.txt" \) \
+            -print 2>/dev/null || true
+          echo "=== End of report discovery ==="
+
+      # ── 9. Upload MUnit reports ──────────────────────────────────────────
+      # Runs even when tests fail so reports are always available.
+      # if-no-files-found: ignore prevents failure when an optional report
+      # directory (e.g., target/munit-reports) was not created this run.
+      - name: Upload MUnit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-process-api-munit-reports
+          path: |
+            target/surefire-reports/**
+            target/site/munit/**
+            target/munit-reports/**
+            target/coverage-reports/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ── 10. Package Mule application (skip MUnit re-run) ─────────────────
+      # -DskipMunitTests=true is the standard MUnit 3.x skip property.
+      # It skips test execution only; compilation and validation still run.
+      - name: Package Mule application
+        run: mvn -B -ntp -s "$HOME/.m2/settings.xml" package -DskipMunitTests=true
+
+      # ── 11. Locate exact deployable Mule JAR ─────────────────────────────
+      # Finds *-mule-application.jar, excludes original-*.jar,
+      # verifies exactly one non-empty JAR exists, then sets GITHUB_OUTPUT.
+      - name: Locate deployable Mule JAR
+        id: locate_jar
+        run: |
+          ARTIFACT_PATH=$(find target -maxdepth 1 \
+            -name "*-mule-application.jar" \
+            ! -name "original-*" \
+            -type f | head -1)
+
+          if [ -z "$ARTIFACT_PATH" ]; then
+            echo "ERROR: No deployable Mule application JAR found in target/"
+            exit 1
+          fi
+
+          ARTIFACT_COUNT=$(find target -maxdepth 1 \
+            -name "*-mule-application.jar" \
+            ! -name "original-*" \
+            -type f | wc -l | tr -d ' ')
+
+          if [ "$ARTIFACT_COUNT" -gt 1 ]; then
+            echo "ERROR: Multiple deployable JARs found — expected exactly one:"
+            find target -maxdepth 1 \
+              -name "*-mule-application.jar" ! -name "original-*" -type f
+            exit 1
+          fi
+
+          if [ ! -s "$ARTIFACT_PATH" ]; then
+            echo "ERROR: Deployable JAR is empty: $ARTIFACT_PATH"
+            exit 1
+          fi
+
+          echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+          echo "Deployable JAR located: $ARTIFACT_PATH"
+          ls -lh "$ARTIFACT_PATH"
+
+      # ── 12. Upload packaged Mule application ─────────────────────────────
+      - name: Upload packaged Mule application
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-process-api-package
+          path: ${{ steps.locate_jar.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # ── 13. CI summary ───────────────────────────────────────────────────
+      - name: CI summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "CI Summary — customer-process-api"
+          echo "============================================"
+          echo "Branch : $GITHUB_REF_NAME"
+          echo "Commit : $GITHUB_SHA"
+          echo "Run ID : $GITHUB_RUN_ID"
+          echo "============================================"

@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <sub-flow name="check-customer-exists-sub-flow" doc:id="76d7e649-f370-4125-ba3b-94d7f41a0ca0">
+        <logger level="INFO" message="Verification Sub-flow: Querying customer ID: #[vars.customerId]" />
+        <http:request method="GET" doc:name="Call SAPI GET Contact By Id" doc:id="fa0b1eb2-4ea8-4279-b510-18633c91cf60" config-ref="salesforceSysApiRequestConfig" path="/contacts/{id}" target="customerCheckResponse">
+            <http:uri-params ><![CDATA[#[output application/java
+---
+{
+    "id" : vars.customerId
+}]]]></http:uri-params>
+        </http:request>
+    </sub-flow>
+
+    <sub-flow name="process-account-logic-sub-flow" doc:id="ee780f0a-48c0-491d-94f2-4cdad171406c">
+        <logger level="INFO" message="Orchestration: Checking if Account exists..." />
+
+        <!-- FIXED: Removed 'target' attribute so the SAPI response replaces native payload/attributes stream -->
+        <http:request method="GET" doc:name="Call SAPI GET Account By Name" config-ref="salesforceSysApiRequestConfig" path="/accounts/name/{name}">
+            <http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"name" : vars.originalPayload.accountName
+}]]]></http:uri-params>
+            <http:response-validator >
+                <http:success-status-code-validator values="0..599" />
+            </http:response-validator>
+        </http:request>
+
+        <!-- Safe Object Parser: Reads the direct network payload stream securely -->
+        <set-variable value="#[%dw 2.0 output application/json --- if(payload is Binary or payload is String) read(payload, 'application/json') else payload]" doc:name="Parse Account Response" variableName="accountCheckResponse"/>
+        <set-variable value="#[attributes.statusCode default 200]" doc:name="Set Account Status Code" variableName="accountCheckStatusCode"/>
+
+        <logger level="INFO" doc:name="Logger" message="Account status value: #[vars.accountCheckStatusCode]"/>
+
+        <choice doc:name="Account Exists?">
+            <!-- YES PATH: If account found with data list, grab the existing ID -->
+            <when expression='#[vars.accountCheckStatusCode &lt; 400 and (vars.accountCheckResponse.status default "failed") == "success" and !isEmpty(vars.accountCheckResponse.data default [])]'>
+                <logger level="INFO" message="Account found in system. Skipping creation step." />
+                <set-variable value="#[vars.accountCheckResponse.data[0].id default vars.accountCheckResponse.data[0].Id]" doc:name="Store Existing Account ID" variableName="finalAccountId"/>
+            </when>
+
+            <!-- NO PATH: Account is missing, create it fresh -->
+            <otherwise>
+                <logger level="INFO" message="Account missing in system. Initiating creation..." />
+                <ee:transform doc:name="Build SAPI Account Create Payload">
+                    <ee:message >
+                        <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"name": vars.originalPayload.accountName,
+	"type": "Customer"
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+
+                <!-- FIXED: Removed target variable so creation response drops into native stream context -->
+                <http:request method="POST" doc:name="Call SAPI POST Account" config-ref="salesforceSysApiRequestConfig" path="/accounts">
+                    <http:response-validator >
+                        <http:success-status-code-validator values="0..599" />
+                    </http:response-validator>
+                </http:request>
+
+                <!-- Safe parsing configuration step for the creation output payload -->
+                <set-variable value="#[payload]" doc:name="Parse Create Response" variableName="accountCreateResponse"/>
+                <set-variable value="#[attributes.statusCode default 201]" doc:name="Set Create Status Code" variableName="accountCreateStatusCode"/>
+
+                <!-- FIXED: Removed all literal text quotation strings to map variable value natively -->
+                <set-variable value="#[vars.accountCreateResponse.id default vars.accountCreateResponse.Id]" doc:name="Set Final Account ID" variableName="finalAccountId"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+
+    <sub-flow name="process-contact-logic-sub-flow" doc:id="1107b180-925f-43a6-acab-6015f8fc5065">
+        <logger level="INFO" message="Orchestration: Checking if Contact Email exists..." />
+
+        <!-- Check Contact via System API GET endpoint by Email -->
+        <http:request method="GET" doc:name="Call SAPI GET Contact By Email" config-ref="salesforceSysApiRequestConfig" path="/contacts/email/{email}">
+            <http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"email" : vars.originalPayload.email
+}]]]></http:uri-params>
+            <http:response-validator >
+                <http:success-status-code-validator values="0..599" />
+            </http:response-validator>
+        </http:request>
+
+        <!-- Safe Object Parser: Reads the direct network payload stream cleanly to prevent stream crashes -->
+        <set-variable value="#[%dw 2.0 output application/json --- if(payload is Binary or payload is String) read(payload, 'application/json') else payload]" doc:name="Parse Contact Response" variableName="contactCheckResponse"/>
+        <set-variable value="#[attributes.statusCode default 200]" doc:name="Set Contact Status Code" variableName="contactCheckStatusCode"/>
+
+        <logger level="INFO" doc:name="Logger" message="Contact check returned HTTP #[vars.contactCheckStatusCode]"/>
+
+        <choice doc:name="Contact Exists?">
+            <!-- YES PATH: If contact is found, reject the submission as a Duplicate (409 Conflict) -->
+            <when expression='#[vars.contactCheckStatusCode &lt; 400 and (vars.contactCheckResponse.status default "failed") == "success" and !isEmpty(vars.contactCheckResponse.data default null)]'>
+                <logger level="WARN" message="Duplicate contact detected for email: #[vars.originalPayload.email]. Aborting process." />
+                <ee:transform doc:name="Transform Duplicate Error Response" doc:id="508f0237-e9cb-488c-86c6-cdfb187dacc3">
+                    <ee:message >
+                        <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "status": "failed",
+  "errorCode": "DUPLICATE_CUSTOMER",
+  "message": "Customer already exists."
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables >
+                        <ee:set-variable variableName="httpStatus"><![CDATA[409]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <!-- Raise a custom error descriptor to break out of the flow completely -->
+                <raise-error doc:name="Raise Duplicate Error" doc:id="5acbf8c0-88c5-44f2-86e8-1cd66c9523ce" type="CUSTOM:DUPLICATE_RECORD" description="Aborting execution due to duplicate contact registration details."/>
+            </when>
+
+            <!-- NO PATH (Default): Contact does not exist, go create it -->
+            <otherwise>
+                <logger level="INFO" message="Contact email is unique. Proceeding to create record..." />
+                <ee:transform doc:name="Build SAPI Contact Create Payload" doc:id="e0fe8e53-aead-404e-a9b0-f419b56ed1de">
+                    <ee:message >
+                        <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+   "firstName": vars.originalPayload.firstName,
+   "lastName": vars.originalPayload.lastName,
+   "email": vars.originalPayload.email,
+   "accountId": vars.finalAccountId
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+
+                <http:request method="POST" doc:name="Call SAPI POST Contact" config-ref="salesforceSysApiRequestConfig" path="/contacts">
+                    <http:response-validator >
+                        <http:success-status-code-validator values="0..599" />
+                    </http:response-validator>
+                </http:request>
+
+                <!-- Safe parsing step for the creation output payload stream -->
+                <set-variable value="#[payload]" doc:name="Parse Create Response" variableName="contactCreateResponse"/>
+
+                <!-- FIXED: Wrapped in expression brackets #[...] and handles both upper/lowercase properties safely -->
+                <set-variable value="#[vars.contactCreateResponse.id default vars.contactCreateResponse.Id]" doc:name="Store New Contact ID" variableName="finalContactId"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+
+    <sub-flow name="create-account-sub-flow" doc:id="b7df8db4-98af-4535-9e37-ff3a185cbc18">
+        <logger level="INFO" message="Sub-flow: Building Account request payload" />
+
+        <!-- FIXED: Removed the broken xs:annotation schema metadata tags completely -->
+        <ee:transform doc:name="Build Account Request Payload" doc:id="72a79401-b1a7-4f4f-9ca7-d2887bb0a0c7" >
+            <ee:message >
+                <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "name": vars.originalPayload.accountName,
+    "type": "Customer"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+
+        <!-- Target variable 'accountResult' captures System API response data cleanly -->
+        <http:request method="POST" doc:name="Call Sys API POST Account" config-ref="salesforceSysApiRequestConfig" path="/accounts" target="accountResult"/>
+    </sub-flow>
+
+    <sub-flow name="create-contact-sub-flow" doc:id="646f8ab3-e50e-451a-8040-ff1f5b68622e">
+        <logger level="INFO" message="Sub-flow: Building Contact request payload" />
+
+        <ee:transform doc:name="Build Contact Request Payload" doc:id="39eceecb-648b-464f-875a-503bb7664028" >
+            <ee:message >
+                <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"firstName": vars.originalPayload.firstName,
+	"lastName": vars.originalPayload.lastName,
+	"email": vars.originalPayload.email,
+	// FIXED: Removed [0] index accessor to map the entire Account ID text string
+	"accountId": vars.accountResult.id
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+
+        <http:request method="POST" doc:name="Call Sys API POST Contact" config-ref="salesforceSysApiRequestConfig" path="/contacts"/>
+    </sub-flow>
+
+</mule>

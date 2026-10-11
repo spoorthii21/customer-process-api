@@ -208,9 +208,7 @@ jobs:
               server,
               f"{{{settings_namespace}}}password"
           )
-          password.text = (
-              client_id + "~?~" + client_secret
-          )
+          password.text = client_id + "~?~" + client_secret
 
           settings_path = os.path.expanduser(
               "~/.m2/settings.xml"
@@ -324,51 +322,107 @@ jobs:
             validate
 
       - name: Run MUnit tests and coverage
+        id: munit
         shell: bash
         run: |
+          set +e
+
+          MUNIT_LOG="$RUNNER_TEMP/munit-console.log"
+
           mvn \
             -B \
             -ntp \
             -s "$HOME/.m2/settings.xml" \
-            clean test
+            clean test \
+            2>&1 | tee "$MUNIT_LOG"
 
-      - name: Discover generated MUnit reports
+          MAVEN_EXIT_CODE=${PIPESTATUS[0]}
+
+          echo "maven_exit_code=$MAVEN_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          echo "============================================"
+          echo "MUnit execution summary"
+          echo "============================================"
+
+          grep \
+            -nE \
+            "FAILURE|ERROR|Tests run:|Failed:|Errors:|Skipped:|Caused by:|AssertionError|Expected:|but:|Failed to deploy|There was.*error|BUILD FAILURE" \
+            "$MUNIT_LOG" \
+            | tail -250 || true
+
+          echo "============================================"
+          echo "MUnit Maven exit code: $MAVEN_EXIT_CODE"
+          echo "============================================"
+
+          exit "$MAVEN_EXIT_CODE"
+
+      - name: Collect MUnit diagnostic files
         if: always()
         shell: bash
         run: |
-          echo "============================================"
-          echo "Generated MUnit and test report files"
-          echo "============================================"
+          DIAGNOSTIC_DIR="$RUNNER_TEMP/munit-diagnostics"
+
+          mkdir -p "$DIAGNOSTIC_DIR"
+
+          if [ -f "$RUNNER_TEMP/munit-console.log" ]; then
+            cp \
+              "$RUNNER_TEMP/munit-console.log" \
+              "$DIAGNOSTIC_DIR/munit-console.log"
+          fi
 
           if [ -d "target" ]; then
             find target \
-              -maxdepth 6 \
+              -maxdepth 8 \
               -type f \
               \( \
                 -name "*.xml" \
                 -o -name "*.html" \
                 -o -name "*.txt" \
+                -o -name "*.log" \
               \) \
-              -print 2>/dev/null || true
-          else
-            echo "target directory was not generated."
+              -print \
+              -exec cp \
+                --parents \
+                "{}" \
+                "$DIAGNOSTIC_DIR/" \
+              \; 2>/dev/null || true
           fi
 
           if [ -d "reports" ]; then
             find reports \
-              -maxdepth 6 \
+              -maxdepth 8 \
               -type f \
               \( \
                 -name "*.xml" \
                 -o -name "*.html" \
                 -o -name "*.txt" \
+                -o -name "*.log" \
               \) \
-              -print 2>/dev/null || true
-          else
-            echo "reports directory was not generated."
+              -print \
+              -exec cp \
+                --parents \
+                "{}" \
+                "$DIAGNOSTIC_DIR/" \
+              \; 2>/dev/null || true
           fi
 
           echo "============================================"
+          echo "Collected MUnit diagnostics"
+          echo "============================================"
+
+          find \
+            "$DIAGNOSTIC_DIR" \
+            -type f \
+            -print 2>/dev/null || true
+
+      - name: Upload MUnit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-process-api-munit-diagnostics
+          path: ${{ runner.temp }}/munit-diagnostics/**
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload MUnit reports
         if: always()
@@ -381,11 +435,13 @@ jobs:
             target/site/munit/**
             target/coverage-reports/**
             target/test-results/**
+            target/**/*.log
             reports/**
           if-no-files-found: ignore
           retention-days: 14
 
       - name: Package Mule application
+        if: success()
         shell: bash
         run: |
           mvn \
@@ -396,6 +452,7 @@ jobs:
             -DskipMunitTests=true
 
       - name: Locate deployable Mule application JAR
+        if: success()
         id: locate_jar
         shell: bash
         run: |
@@ -466,5 +523,6 @@ jobs:
             echo "- Java: \`17\`"
             echo "- Maven: \`3.9.9\`"
             echo "- Maven server: \`anypoint-exchange-v3\`"
+            echo "- MUnit Maven exit code: \`${{ steps.munit.outputs.maven_exit_code }}\`"
             echo "- Deployment: \`Not configured\`"
           } >> "$GITHUB_STEP_SUMMARY"

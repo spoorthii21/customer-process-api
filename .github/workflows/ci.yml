@@ -20,6 +20,7 @@ jobs:
     env:
       ANYPOINT_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
       ANYPOINT_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+      MAVEN_VERSION: "3.9.9"
 
     steps:
       - name: Checkout repository
@@ -32,11 +33,54 @@ jobs:
           java-version: "17"
           cache: maven
 
-      - name: Display Java and Maven versions
+      - name: Install Maven 3.9.9
+        shell: bash
+        run: |
+          MAVEN_ARCHIVE="apache-maven-${MAVEN_VERSION}-bin.tar.gz"
+          MAVEN_URL="https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/${MAVEN_ARCHIVE}"
+
+          echo "Downloading Maven ${MAVEN_VERSION}"
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            "$MAVEN_URL" \
+            --output "$RUNNER_TEMP/$MAVEN_ARCHIVE"
+
+          mkdir -p "$RUNNER_TEMP/maven"
+
+          tar \
+            -xzf "$RUNNER_TEMP/$MAVEN_ARCHIVE" \
+            -C "$RUNNER_TEMP/maven"
+
+          MAVEN_HOME="$RUNNER_TEMP/maven/apache-maven-${MAVEN_VERSION}"
+
+          if [ ! -x "$MAVEN_HOME/bin/mvn" ]; then
+            echo "::error::Maven ${MAVEN_VERSION} installation failed"
+            exit 1
+          fi
+
+          echo "MAVEN_HOME=$MAVEN_HOME" >> "$GITHUB_ENV"
+          echo "$MAVEN_HOME/bin" >> "$GITHUB_PATH"
+
+          rm -f "$RUNNER_TEMP/$MAVEN_ARCHIVE"
+
+      - name: Verify Java and Maven versions
         shell: bash
         run: |
           java -version
-          mvn -B --version
+          mvn --version
+
+          ACTUAL_MAVEN_VERSION=$(mvn --version | head -1)
+
+          if [[ "$ACTUAL_MAVEN_VERSION" != *"Apache Maven 3.9.9"* ]]; then
+            echo "::error::Expected Maven 3.9.9 but found: $ACTUAL_MAVEN_VERSION"
+            exit 1
+          fi
+
+          echo "Maven 3.9.9 is active."
 
       - name: Check required Anypoint secrets
         shell: bash
@@ -244,12 +288,38 @@ jobs:
           )
           PY
 
+      - name: Clear incompatible cached Maven libraries
+        shell: bash
+        run: |
+          echo "Clearing cached Mule Maven Plugin and Maven Resolver libraries."
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/tools/maven/mule-maven-plugin"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/tools/maven/mule-packager"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/tools/maven/mule-deployer"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/mule-maven-client-api"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/mule-maven-client-impl"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/apache/maven/resolver"
+
+          echo "Conflicting cached Maven libraries were removed."
+
       - name: Maven validate
         shell: bash
         run: |
           mvn \
             -B \
             -ntp \
+            -U \
             -s "$HOME/.m2/settings.xml" \
             validate
 
@@ -345,6 +415,7 @@ jobs:
             echo "::error::No deployable Mule application JAR was found."
 
             echo "Files currently present in target:"
+
             find target \
               -maxdepth 1 \
               -type f \
@@ -393,6 +464,7 @@ jobs:
             echo "- Branch: \`$GITHUB_REF_NAME\`"
             echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Java: \`17\`"
+            echo "- Maven: \`3.9.9\`"
             echo "- Maven server: \`anypoint-exchange-v3\`"
             echo "- Deployment: \`Not configured\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -53,6 +53,59 @@ jobs:
 
           echo "Required Anypoint repository secrets are available."
 
+      - name: Verify Anypoint Connected App authentication
+        shell: bash
+        run: |
+          TOKEN_RESPONSE="$RUNNER_TEMP/anypoint-token-response.json"
+
+          HTTP_STATUS=$(curl \
+            --silent \
+            --show-error \
+            --output "$TOKEN_RESPONSE" \
+            --write-out "%{http_code}" \
+            --request POST \
+            "https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token" \
+            --header "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "client_id=$ANYPOINT_CLIENT_ID" \
+            --data-urlencode "client_secret=$ANYPOINT_CLIENT_SECRET" \
+            --data-urlencode "grant_type=client_credentials")
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::GitHub Secrets could not authenticate the Anypoint Connected App. HTTP status: $HTTP_STATUS"
+            rm -f "$TOKEN_RESPONSE"
+            exit 1
+          fi
+
+          python3 <<'PY'
+          import json
+          import os
+
+          response_path = os.path.join(
+              os.environ["RUNNER_TEMP"],
+              "anypoint-token-response.json"
+          )
+
+          with open(response_path, encoding="utf-8") as response_file:
+              response = json.load(response_file)
+
+          if response.get("token_type", "").lower() != "bearer":
+              raise RuntimeError(
+                  "Anypoint response did not contain a bearer token"
+              )
+
+          if not response.get("access_token"):
+              raise RuntimeError(
+                  "Anypoint response did not contain an access token"
+              )
+
+          print(
+              "GitHub repository secrets successfully authenticated "
+              "the Anypoint Connected App."
+          )
+          PY
+
+          rm -f "$TOKEN_RESPONSE"
+
       - name: Create Maven settings.xml
         shell: bash
         run: |
@@ -62,8 +115,13 @@ jobs:
           import os
           import xml.etree.ElementTree as ET
 
-          settings_namespace = "http://maven.apache.org/SETTINGS/1.0.0"
-          xsi_namespace = "http://www.w3.org/2001/XMLSchema-instance"
+          settings_namespace = (
+              "http://maven.apache.org/SETTINGS/1.0.0"
+          )
+
+          xsi_namespace = (
+              "http://www.w3.org/2001/XMLSchema-instance"
+          )
 
           ET.register_namespace("", settings_namespace)
           ET.register_namespace("xsi", xsi_namespace)
@@ -106,11 +164,16 @@ jobs:
               server,
               f"{{{settings_namespace}}}password"
           )
-          password.text = client_id + "~?~" + client_secret
+          password.text = (
+              client_id + "~?~" + client_secret
+          )
 
-          settings_path = os.path.expanduser("~/.m2/settings.xml")
+          settings_path = os.path.expanduser(
+              "~/.m2/settings.xml"
+          )
 
           tree = ET.ElementTree(root)
+
           tree.write(
               settings_path,
               encoding="UTF-8",
@@ -121,7 +184,7 @@ jobs:
 
           print(
               "Maven settings.xml created successfully "
-              "for server anypoint-exchange-v3"
+              "for server anypoint-exchange-v3."
           )
           PY
 
@@ -132,7 +195,10 @@ jobs:
           import os
           import xml.etree.ElementTree as ET
 
-          settings_path = os.path.expanduser("~/.m2/settings.xml")
+          settings_path = os.path.expanduser(
+              "~/.m2/settings.xml"
+          )
+
           tree = ET.parse(settings_path)
           root = tree.getroot()
 
@@ -172,7 +238,10 @@ jobs:
 
           print("Maven settings.xml is valid.")
           print("Maven server ID: anypoint-exchange-v3")
-          print("Connected App authentication format is configured.")
+          print(
+              "Connected App Maven authentication "
+              "format is configured."
+          )
           PY
 
       - name: Maven validate
@@ -264,7 +333,7 @@ jobs:
             find target \
               -maxdepth 1 \
               -type f \
-              -name "*-mule-application.jar" \
+              -name "*.jar" \
               ! -name "original-*" \
               ! -name "*-sources.jar" \
               ! -name "*-javadoc.jar"
@@ -275,18 +344,17 @@ jobs:
           if [ "$ARTIFACT_COUNT" -eq 0 ]; then
             echo "::error::No deployable Mule application JAR was found."
 
-            echo "JAR files currently present in target:"
+            echo "Files currently present in target:"
             find target \
               -maxdepth 1 \
               -type f \
-              -name "*.jar" \
               -print 2>/dev/null || true
 
             exit 1
           fi
 
           if [ "$ARTIFACT_COUNT" -gt 1 ]; then
-            echo "::error::Multiple Mule application JARs were found."
+            echo "::error::Multiple candidate Mule JARs were found."
 
             printf '%s\n' "${ARTIFACTS[@]}"
 

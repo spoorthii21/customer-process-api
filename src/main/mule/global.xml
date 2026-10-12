@@ -1,26 +1,66 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
 <mule xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
       xmlns:http="http://www.mulesoft.org/schema/mule/http"
       xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
       xmlns="http://www.mulesoft.org/schema/mule/core"
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-          http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
-http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd">
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd 
+          http://www.mulesoft.org/schema/mule/core
+          http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/http
+          http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+          http://www.mulesoft.org/schema/mule/mule-apikit
+          http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+          http://www.mulesoft.org/schema/mule/api-gateway
+          http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd">
 
-    <http:listener-config name="customer-process-apiraml-httpListenerConfig">
-        <http:listener-connection host="0.0.0.0" port="8082" />
+    <http:listener-config
+        name="customer-process-apiraml-httpListenerConfig"
+        doc:name="HTTP Listener Config">
+
+        <http:listener-connection
+            host="0.0.0.0"
+            port="${http.port}" />
+
     </http:listener-config>
-    <apikit:config name="customer-process-apiraml-config" api="resource::3566f43d-29f6-4a1e-ac94-4be9322c7333:customer-process-apiraml:1.0.0:raml:zip:customer-process-apiraml.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
-    <http:request-config name="salesforceSysApiRequestConfig" doc:name="HTTP Request configuration" doc:id="c78db72b-c206-469f-90a7-b7f1e7ea89a7" basePath="/api" >
-        <http:request-connection host="salesforce-sys-api-dev-i2wbb4.5sc6y6-3.usa-e2.cloudhub.io" port="443" protocol="HTTPS">
-			<reconnection >
-				<reconnect frequency="3" count="3" />
-			</reconnection>
-		</http:request-connection>
+
+    <apikit:config
+        name="customer-process-apiraml-config"
+        api="resource::3566f43d-29f6-4a1e-ac94-4be9322c7333:customer-process-apiraml:1.0.0:raml:zip:customer-process-apiraml.raml"
+        outboundHeadersMapName="outboundHeaders"
+        httpStatusVarName="httpStatus" />
+
+    <http:request-config
+        name="salesforceSysApiRequestConfig"
+        doc:name="HTTP Request configuration"
+        doc:id="6a1f300a-0508-427f-9456-a40c27b20905"
+        basePath="/api">
+
+        <http:request-connection
+            host="salesforce-sys-api-dev-i2wbb4.5sc6y6-3.usa-e2.cloudhub.io"
+            port="443"
+            protocol="HTTPS">
+
+            <reconnection>
+                <reconnect
+                    frequency="3000"
+                    count="3" />
+            </reconnection>
+
+        </http:request-connection>
+
     </http:request-config>
-	<api-gateway:autodiscovery apiId="21230626" ignoreBasePath="true" doc:name="API Autodiscovery" doc:id="ab412620-a8bd-48e2-a02e-13dddc1a9278" flowRef="customer-process-apiraml-main" />
+
+    <api-gateway:autodiscovery
+        apiId="21230626"
+        ignoreBasePath="true"
+        doc:name="API Autodiscovery"
+        doc:id="2f8706f3-39f5-42b2-b62e-9d1cc59e46a9"
+        flowRef="customer-process-apiraml-main" />
 
 </mule>

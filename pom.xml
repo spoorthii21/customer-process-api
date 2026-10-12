@@ -2,7 +2,7 @@
 <modelVersion>4.0.0</modelVersion>
 <groupId>3566f43d-29f6-4a1e-ac94-4be9322c7333</groupId>
 <artifactId>customer-process-api-app</artifactId>
-<version>1.0.0</version>
+<version>1.0.1</version>
 <packaging>mule-application</packaging>
 <name>customer-process-api</name>
 <properties>

@@ -24,7 +24,7 @@ http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/m
         doc:name="HTTP Listener Config">
 
         <http:listener-connection
-            host="0.0.0.0"
+            host="localhost"
             port="${http.port}" />
 
     </http:listener-config>

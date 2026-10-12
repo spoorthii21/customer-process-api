@@ -113,17 +113,16 @@ jobs:
           import json
           import sys
 
-          path = sys.argv[1]
-
           try:
-              with open(path, encoding="utf-8") as stream:
+              with open(sys.argv[1], encoding="utf-8") as stream:
                   response = json.load(stream)
 
-              message = response.get(
-                  "error_description",
-                  response.get("error", "Unknown authentication error")
+              print(
+                  response.get(
+                      "error_description",
+                      response.get("error", "Unknown authentication error")
+                  )
               )
-              print(message)
           except Exception as exc:
               print(f"Unable to parse authentication response: {exc}")
           PY
@@ -133,17 +132,11 @@ jobs:
             exit 1
           fi
 
-          python3 <<'PY'
+          python3 - "$TOKEN_RESPONSE" <<'PY'
           import json
-          import os
           import sys
 
-          path = os.path.join(
-              os.environ["RUNNER_TEMP"],
-              "anypoint-token-response.json"
-          )
-
-          with open(path, encoding="utf-8") as stream:
+          with open(sys.argv[1], encoding="utf-8") as stream:
               response = json.load(stream)
 
           if response.get("token_type", "").lower() != "bearer":
@@ -186,7 +179,6 @@ jobs:
           )
 
           servers = ET.SubElement(root, f"{{{namespace}}}servers")
-
           server = ET.SubElement(servers, f"{{{namespace}}}server")
 
           ET.SubElement(
@@ -217,6 +209,7 @@ jobs:
           )
 
           ET.parse(path)
+
           print("Maven settings.xml created successfully.")
           PY
 
@@ -362,6 +355,7 @@ jobs:
           set -euo pipefail
 
           DIAGNOSTIC_DIR="$RUNNER_TEMP/munit-diagnostics"
+
           mkdir -p "$DIAGNOSTIC_DIR"
 
           if [ -f "$RUNNER_TEMP/munit-console.log" ]; then
@@ -520,8 +514,6 @@ jobs:
           echo "Target: $CLOUDHUB_TARGET"
           echo "API instance ID: $PAPI_API_ID"
 
-      # This step fixes:
-      # 409 Conflict: Application properties cannot contain newline characters.
       - name: Sanitize CloudHub deployment values
         if: >-
           ${{
@@ -559,6 +551,12 @@ jobs:
           ANYPOINT_PLATFORM_CLIENT_SECRET_CLEAN="$(sanitize_value "$RAW_ANYPOINT_PLATFORM_CLIENT_SECRET")"
           MULE_KEY_CLEAN="$(sanitize_value "$RAW_MULE_KEY")"
 
+          echo "::add-mask::$CONNECTED_APP_CLIENT_ID_CLEAN"
+          echo "::add-mask::$CONNECTED_APP_CLIENT_SECRET_CLEAN"
+          echo "::add-mask::$ANYPOINT_PLATFORM_CLIENT_ID_CLEAN"
+          echo "::add-mask::$ANYPOINT_PLATFORM_CLIENT_SECRET_CLEAN"
+          echo "::add-mask::$MULE_KEY_CLEAN"
+
           {
             printf 'ANYPOINT_ORG_ID=%s\n' "$ANYPOINT_ORG_ID_CLEAN"
             printf 'ANYPOINT_ENVIRONMENT=%s\n' "$ANYPOINT_ENVIRONMENT_CLEAN"
@@ -571,11 +569,6 @@ jobs:
             printf 'ANYPOINT_PLATFORM_CLIENT_SECRET=%s\n' "$ANYPOINT_PLATFORM_CLIENT_SECRET_CLEAN"
             printf 'MULE_KEY=%s\n' "$MULE_KEY_CLEAN"
           } >> "$GITHUB_ENV"
-
-          echo "::add-mask::$CONNECTED_APP_CLIENT_SECRET_CLEAN"
-          echo "::add-mask::$ANYPOINT_PLATFORM_CLIENT_ID_CLEAN"
-          echo "::add-mask::$ANYPOINT_PLATFORM_CLIENT_SECRET_CLEAN"
-          echo "::add-mask::$MULE_KEY_CLEAN"
 
           echo "CloudHub deployment values sanitized successfully."
 
@@ -643,6 +636,8 @@ jobs:
 
           PUBLISH_LOG="$RUNNER_TEMP/papi-exchange-publication.log"
 
+          echo "asset_already_exists=false" >> "$GITHUB_OUTPUT"
+
           mvn \
             --batch-mode \
             --no-transfer-progress \
@@ -653,6 +648,17 @@ jobs:
             2>&1 | tee "$PUBLISH_LOG"
 
           MAVEN_EXIT_CODE=${PIPESTATUS[0]}
+
+          if grep -Fq \
+            "An asset already exists with this version and published lifecycle state" \
+            "$PUBLISH_LOG"; then
+
+            echo "::warning::Exchange asset version already exists. Reusing the existing Exchange asset and continuing to CloudHub deployment."
+
+            echo "asset_already_exists=true" >> "$GITHUB_OUTPUT"
+
+            MAVEN_EXIT_CODE=0
+          fi
 
           echo "publication_exit_code=$MAVEN_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
@@ -667,7 +673,7 @@ jobs:
               "$PUBLISH_LOG" \
               | tail -300 || true
           else
-            echo "PAPI application was published successfully."
+            echo "Exchange publication succeeded or the asset already exists."
           fi
 
           exit "$MAVEN_EXIT_CODE"
@@ -677,11 +683,14 @@ jobs:
           ${{
             github.event_name == 'workflow_dispatch' &&
             github.ref == 'refs/heads/main' &&
-            inputs.deploy == true
+            inputs.deploy == true &&
+            steps.publish.outputs.asset_already_exists != 'true'
           }}
         shell: bash
         run: |
-          echo "Waiting 30 seconds for Exchange asset propagation..."
+          set -euo pipefail
+
+          echo "Waiting 30 seconds for the newly published Exchange asset to propagate..."
           sleep 30
 
       - name: Deploy PAPI application to CloudHub 2.0
@@ -697,6 +706,7 @@ jobs:
           set +e
 
           DEPLOY_LOG="$RUNNER_TEMP/papi-deployment.log"
+
           : > "$DEPLOY_LOG"
 
           FINAL_EXIT_CODE=1
@@ -725,11 +735,13 @@ jobs:
               break
             fi
 
-            if grep -q \
+            if grep -Fq \
               "Application properties cannot contain newline characters" \
               "$DEPLOY_LOG"; then
-              echo "::error::CloudHub rejected an application property because it contains a newline."
-              echo "::error::Check the CloudHub properties section in pom.xml."
+
+              echo "::error::CloudHub rejected an application property because it contains a newline character."
+              echo "::error::Check the CloudHub application properties section in pom.xml."
+
               break
             fi
 
@@ -788,6 +800,7 @@ jobs:
             echo "- Application version: \`1.0.0\`"
             echo "- MUnit exit code: \`${{ steps.munit.outputs.maven_exit_code || 'not executed' }}\`"
             echo "- Exchange publication exit code: \`${{ steps.publish.outputs.publication_exit_code || 'not executed' }}\`"
+            echo "- Existing Exchange asset reused: \`${{ steps.publish.outputs.asset_already_exists || 'not executed' }}\`"
             echo "- CloudHub deployment exit code: \`${{ steps.deploy.outputs.deployment_exit_code || 'not executed' }}\`"
             echo "- Application: \`${SUMMARY_PAPI_APPLICATION_NAME:-not configured}\`"
             echo "- Environment: \`${SUMMARY_ANYPOINT_ENVIRONMENT:-not configured}\`"

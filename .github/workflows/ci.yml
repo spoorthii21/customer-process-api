@@ -1,20 +1,31 @@
-name: CI - customer-process-api
+name: Customer Process API CI/CD
 
 on:
   push:
     branches:
       - main
+      - develop
+      - "feature/**"
+
   pull_request:
     branches:
       - main
+      - develop
+
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy PAPI to CloudHub 2.0
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Validate, test, and package PAPI
+  ci:
+    name: Build, Test, Publish and Deploy PAPI
     runs-on: ubuntu-latest
 
     env:
@@ -26,76 +37,53 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 17 with Maven cache
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
           java-version: "17"
+          distribution: temurin
           cache: maven
 
-      - name: Install Maven 3.9.9
-        shell: bash
-        run: |
-          MAVEN_ARCHIVE="apache-maven-${MAVEN_VERSION}-bin.tar.gz"
-          MAVEN_URL="https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/${MAVEN_ARCHIVE}"
+      - name: Set up Maven 3.9.9
+        uses: stCarolas/setup-maven@v5
+        with:
+          maven-version: "3.9.9"
 
-          echo "Downloading Maven ${MAVEN_VERSION}"
-
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --location \
-            "$MAVEN_URL" \
-            --output "$RUNNER_TEMP/$MAVEN_ARCHIVE"
-
-          mkdir -p "$RUNNER_TEMP/maven"
-
-          tar \
-            -xzf "$RUNNER_TEMP/$MAVEN_ARCHIVE" \
-            -C "$RUNNER_TEMP/maven"
-
-          MAVEN_HOME="$RUNNER_TEMP/maven/apache-maven-${MAVEN_VERSION}"
-
-          if [ ! -x "$MAVEN_HOME/bin/mvn" ]; then
-            echo "::error::Maven ${MAVEN_VERSION} installation failed"
-            exit 1
-          fi
-
-          echo "MAVEN_HOME=$MAVEN_HOME" >> "$GITHUB_ENV"
-          echo "$MAVEN_HOME/bin" >> "$GITHUB_PATH"
-
-          rm -f "$RUNNER_TEMP/$MAVEN_ARCHIVE"
-
-      - name: Verify Java and Maven versions
+      - name: Display Java and Maven versions
         shell: bash
         run: |
           java -version
           mvn --version
 
-          ACTUAL_MAVEN_VERSION=$(mvn --version | head -1)
+          ACTUAL_MAVEN_VERSION="$(mvn --version | head -1)"
 
           if [[ "$ACTUAL_MAVEN_VERSION" != *"Apache Maven 3.9.9"* ]]; then
             echo "::error::Expected Maven 3.9.9 but found: $ACTUAL_MAVEN_VERSION"
             exit 1
           fi
 
-          echo "Maven 3.9.9 is active."
+          echo "Java 17 and Maven 3.9.9 are active."
 
-      - name: Check required Anypoint secrets
+      - name: Validate required Anypoint build secrets
         shell: bash
         run: |
+          MISSING=0
+
           if [ -z "$ANYPOINT_CLIENT_ID" ]; then
             echo "::error::ANYPOINT_CLIENT_ID repository secret is missing"
-            exit 1
+            MISSING=1
           fi
 
           if [ -z "$ANYPOINT_CLIENT_SECRET" ]; then
             echo "::error::ANYPOINT_CLIENT_SECRET repository secret is missing"
+            MISSING=1
+          fi
+
+          if [ "$MISSING" -ne 0 ]; then
             exit 1
           fi
 
-          echo "Required Anypoint repository secrets are available."
+          echo "Required Anypoint build secrets are available."
 
       - name: Verify Anypoint Connected App authentication
         shell: bash
@@ -110,12 +98,19 @@ jobs:
             --request POST \
             "https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token" \
             --header "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "client_id=$ANYPOINT_CLIENT_ID" \
-            --data-urlencode "client_secret=$ANYPOINT_CLIENT_SECRET" \
+            --data-urlencode "client_id=${ANYPOINT_CLIENT_ID}" \
+            --data-urlencode "client_secret=${ANYPOINT_CLIENT_SECRET}" \
             --data-urlencode "grant_type=client_credentials")
 
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::GitHub Secrets could not authenticate the Anypoint Connected App. HTTP status: $HTTP_STATUS"
+            echo "::error::Connected App authentication failed. HTTP status: $HTTP_STATUS"
+
+            if [ -f "$TOKEN_RESPONSE" ]; then
+              python3 -c \
+                'import json,sys; data=json.load(open(sys.argv[1])); print("Anypoint error:", data.get("error_description", data.get("error", "Unknown authentication error")))' \
+                "$TOKEN_RESPONSE" || true
+            fi
+
             rm -f "$TOKEN_RESPONSE"
             exit 1
           fi
@@ -123,6 +118,7 @@ jobs:
           python3 <<'PY'
           import json
           import os
+          import sys
 
           response_path = os.path.join(
               os.environ["RUNNER_TEMP"],
@@ -133,14 +129,16 @@ jobs:
               response = json.load(response_file)
 
           if response.get("token_type", "").lower() != "bearer":
-              raise RuntimeError(
-                  "Anypoint response did not contain a bearer token"
+              print(
+                  "::error::Anypoint response did not contain a bearer token"
               )
+              sys.exit(1)
 
           if not response.get("access_token"):
-              raise RuntimeError(
-                  "Anypoint response did not contain an access token"
+              print(
+                  "::error::Anypoint response did not contain an access token"
               )
+              sys.exit(1)
 
           print(
               "GitHub repository secrets successfully authenticated "
@@ -150,7 +148,7 @@ jobs:
 
           rm -f "$TOKEN_RESPONSE"
 
-      - name: Create Maven settings.xml
+      - name: Configure Maven settings for Anypoint Exchange
         shell: bash
         run: |
           mkdir -p "$HOME/.m2"
@@ -208,7 +206,7 @@ jobs:
               server,
               f"{{{settings_namespace}}}password"
           )
-          password.text = client_id + "~?~" + client_secret
+          password.text = f"{client_id}~?~{client_secret}"
 
           settings_path = os.path.expanduser(
               "~/.m2/settings.xml"
@@ -226,23 +224,23 @@ jobs:
 
           print(
               "Maven settings.xml created successfully "
-              "for server anypoint-exchange-v3."
+              "for anypoint-exchange-v3."
           )
           PY
 
-      - name: Validate Maven settings.xml safely
+      - name: Validate Maven settings safely
         shell: bash
         run: |
           python3 <<'PY'
           import os
+          import sys
           import xml.etree.ElementTree as ET
 
           settings_path = os.path.expanduser(
               "~/.m2/settings.xml"
           )
 
-          tree = ET.parse(settings_path)
-          root = tree.getroot()
+          root = ET.parse(settings_path).getroot()
 
           namespace = {
               "m": "http://maven.apache.org/SETTINGS/1.0.0"
@@ -264,32 +262,166 @@ jobs:
           )
 
           if server_id != "anypoint-exchange-v3":
-              raise RuntimeError(
-                  "Maven server ID is missing or incorrect"
+              print(
+                  "::error::Maven server ID is missing or incorrect"
               )
+              sys.exit(1)
 
           if username != "~~~Client~~~":
-              raise RuntimeError(
-                  "Connected App Maven username is incorrect"
+              print(
+                  "::error::Connected App Maven username is incorrect"
               )
+              sys.exit(1)
 
           if not password or "~?~" not in password:
-              raise RuntimeError(
-                  "Connected App Maven password format is incorrect"
+              print(
+                  "::error::Connected App Maven password format is incorrect"
               )
+              sys.exit(1)
 
           print("Maven settings.xml is valid.")
-          print("Maven server ID: anypoint-exchange-v3")
+          PY
+
+      - name: Validate required PAPI project files
+        shell: bash
+        run: |
+          test -f pom.xml || {
+            echo "::error::pom.xml was not found."
+            exit 1
+          }
+
+          test -f mule-artifact.json || {
+            echo "::error::mule-artifact.json was not found."
+            exit 1
+          }
+
+          test -d src/main/mule || {
+            echo "::error::src/main/mule was not found."
+            exit 1
+          }
+
+          test -d src/test/munit || {
+            echo "::error::src/test/munit was not found."
+            exit 1
+          }
+
+          MULE_XML_COUNT=$(find src/main/mule \
+            -maxdepth 1 \
+            -type f \
+            -name "*.xml" \
+            | wc -l)
+
+          MUNIT_XML_COUNT=$(find src/test/munit \
+            -maxdepth 1 \
+            -type f \
+            -name "*.xml" \
+            | wc -l)
+
+          if [ "$MULE_XML_COUNT" -eq 0 ]; then
+            echo "::error::No Mule XML files were found in src/main/mule."
+            exit 1
+          fi
+
+          if [ "$MUNIT_XML_COUNT" -eq 0 ]; then
+            echo "::error::No MUnit XML files were found in src/test/munit."
+            exit 1
+          fi
+
+          echo "Required PAPI project files are available."
+          echo "Mule XML files: $MULE_XML_COUNT"
+          echo "MUnit XML files: $MUNIT_XML_COUNT"
+
+      - name: Validate PAPI Autodiscovery configuration
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          mule_directory = Path("src/main/mule")
+
+          autodiscovery = None
+          autodiscovery_file = None
+
+          for file_path in sorted(mule_directory.glob("*.xml")):
+              try:
+                  root = ET.parse(file_path).getroot()
+              except ET.ParseError as exc:
+                  print(
+                      f"::error::{file_path} is not valid XML: {exc}"
+                  )
+                  sys.exit(1)
+
+              for element in root.iter():
+                  local_name = element.tag.split("}")[-1].lower()
+
+                  if local_name in ("autodiscovery", "discovery"):
+                      autodiscovery = element
+                      autodiscovery_file = file_path
+                      break
+
+              if autodiscovery is not None:
+                  break
+
+          if autodiscovery is None:
+              print(
+                  "::error::API Autodiscovery element was not found "
+                  "in src/main/mule XML files"
+              )
+              sys.exit(1)
+
+          api_id = (
+              autodiscovery.get("apiId") or ""
+          ).strip()
+
+          flow_ref = (
+              autodiscovery.get("flowRef") or ""
+          ).strip()
+
+          if not api_id:
+              print(
+                  "::error::Autodiscovery apiId is empty"
+              )
+              sys.exit(1)
+
+          if not re.fullmatch(r"[0-9]+", api_id):
+              print(
+                  "::error::Autodiscovery apiId must contain only "
+                  "the numeric API Instance ID"
+              )
+              sys.exit(1)
+
+          if flow_ref != "customer-process-apiraml-main":
+              print(
+                  "::error::Autodiscovery flowRef must be "
+                  "customer-process-apiraml-main"
+              )
+              sys.exit(1)
+
           print(
-              "Connected App Maven authentication "
-              "format is configured."
+              "Customer Process API Autodiscovery "
+              "configuration is valid."
+          )
+
+          print(
+              f"Autodiscovery file: {autodiscovery_file}"
+          )
+
+          print(
+              f"Autodiscovery API ID: {api_id}"
+          )
+
+          print(
+              f"Autodiscovery flowRef: {flow_ref}"
           )
           PY
 
       - name: Clear incompatible cached Maven libraries
         shell: bash
         run: |
-          echo "Clearing cached Mule Maven Plugin and Maven Resolver libraries."
+          echo "Clearing cached Mule Maven Plugin libraries."
 
           rm -rf \
             "$HOME/.m2/repository/org/mule/tools/maven/mule-maven-plugin"
@@ -315,10 +447,10 @@ jobs:
         shell: bash
         run: |
           mvn \
-            -B \
-            -ntp \
-            -U \
-            -s "$HOME/.m2/settings.xml" \
+            --batch-mode \
+            --no-transfer-progress \
+            --update-snapshots \
+            --settings "$HOME/.m2/settings.xml" \
             validate
 
       - name: Run MUnit tests and coverage
@@ -330,15 +462,16 @@ jobs:
           MUNIT_LOG="$RUNNER_TEMP/munit-console.log"
 
           mvn \
-            -B \
-            -ntp \
-            -s "$HOME/.m2/settings.xml" \
+            --batch-mode \
+            --no-transfer-progress \
+            --settings "$HOME/.m2/settings.xml" \
             clean test \
             2>&1 | tee "$MUNIT_LOG"
 
           MAVEN_EXIT_CODE=${PIPESTATUS[0]}
 
-          echo "maven_exit_code=$MAVEN_EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "maven_exit_code=$MAVEN_EXIT_CODE" \
+            >> "$GITHUB_OUTPUT"
 
           echo "============================================"
           echo "MUnit execution summary"
@@ -406,9 +539,7 @@ jobs:
               \; 2>/dev/null || true
           fi
 
-          echo "============================================"
-          echo "Collected MUnit diagnostics"
-          echo "============================================"
+          echo "Collected MUnit diagnostic files:"
 
           find \
             "$DIAGNOSTIC_DIR" \
@@ -445,9 +576,9 @@ jobs:
         shell: bash
         run: |
           mvn \
-            -B \
-            -ntp \
-            -s "$HOME/.m2/settings.xml" \
+            --batch-mode \
+            --no-transfer-progress \
+            --settings "$HOME/.m2/settings.xml" \
             package \
             -DskipMunitTests=true
 
@@ -470,8 +601,6 @@ jobs:
 
           if [ "$ARTIFACT_COUNT" -eq 0 ]; then
             echo "::error::No deployable Mule application JAR was found."
-
-            echo "Files currently present in target:"
 
             find target \
               -maxdepth 1 \
@@ -496,9 +625,11 @@ jobs:
             exit 1
           fi
 
-          echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+          echo "artifact_path=$ARTIFACT_PATH" \
+            >> "$GITHUB_OUTPUT"
 
           echo "Deployable Mule application JAR:"
+
           ls -lh "$ARTIFACT_PATH"
 
       - name: Upload packaged Mule application
@@ -510,12 +641,154 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Write CI summary
+      - name: Validate CloudHub 2.0 deployment variables
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        env:
+          ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
+          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
+          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
+          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+        run: |
+          REQUIRED_VARIABLES=(
+            ANYPOINT_ORG_ID
+            ANYPOINT_ENVIRONMENT
+            CLOUDHUB_TARGET
+            PAPI_APPLICATION_NAME
+          )
+
+          MISSING=0
+
+          for VARIABLE_NAME in "${REQUIRED_VARIABLES[@]}"; do
+            if [ -z "${!VARIABLE_NAME}" ]; then
+              echo "::error::$VARIABLE_NAME repository variable is missing"
+              MISSING=1
+            fi
+          done
+
+          if [ "$MISSING" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "CloudHub 2.0 deployment variables are available."
+          echo "Environment: $ANYPOINT_ENVIRONMENT"
+          echo "Target: $CLOUDHUB_TARGET"
+          echo "Application: $PAPI_APPLICATION_NAME"
+
+      - name: Validate deployment and runtime secrets
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        env:
+          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+          ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
+          ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
+          MULE_KEY: ${{ secrets.MULE_KEY }}
+        run: |
+          REQUIRED_SECRETS=(
+            CONNECTED_APP_CLIENT_ID
+            CONNECTED_APP_CLIENT_SECRET
+            ANYPOINT_PLATFORM_CLIENT_ID
+            ANYPOINT_PLATFORM_CLIENT_SECRET
+            MULE_KEY
+          )
+
+          MISSING=0
+
+          for SECRET_NAME in "${REQUIRED_SECRETS[@]}"; do
+            if [ -z "${!SECRET_NAME}" ]; then
+              echo "::error::$SECRET_NAME repository secret is missing"
+              MISSING=1
+            fi
+          done
+
+          if [ "$MISSING" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "Deployment credentials and runtime secrets are available."
+
+      - name: Publish PAPI application to Anypoint Exchange
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        env:
+          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+          ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
+          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
+          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
+          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
+          ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
+          MULE_KEY: ${{ secrets.MULE_KEY }}
+        run: |
+          echo "Publishing Customer Process API to Anypoint Exchange..."
+
+          mvn \
+            --batch-mode \
+            --no-transfer-progress \
+            --settings "$HOME/.m2/settings.xml" \
+            deploy \
+            -DskipMuleDeploy \
+            -DskipTests
+
+      - name: Deploy PAPI application to CloudHub 2.0
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        env:
+          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+          ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
+          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
+          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
+          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
+          ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
+          MULE_KEY: ${{ secrets.MULE_KEY }}
+        run: |
+          echo "Deploying Customer Process API to CloudHub 2.0..."
+          echo "Application: $PAPI_APPLICATION_NAME"
+          echo "Environment: $ANYPOINT_ENVIRONMENT"
+          echo "Target: $CLOUDHUB_TARGET"
+
+          mvn \
+            --batch-mode \
+            --no-transfer-progress \
+            --settings "$HOME/.m2/settings.xml" \
+            mule:deploy \
+            -DskipTests
+
+      - name: Write workflow summary
         if: always()
         shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy || false }}
+          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
+          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
         run: |
           {
-            echo "## Customer Process API CI"
+            echo "## Customer Process API CI/CD"
             echo
             echo "- Repository: \`$GITHUB_REPOSITORY\`"
             echo "- Branch: \`$GITHUB_REF_NAME\`"
@@ -524,5 +797,19 @@ jobs:
             echo "- Maven: \`3.9.9\`"
             echo "- Maven server: \`anypoint-exchange-v3\`"
             echo "- MUnit Maven exit code: \`${{ steps.munit.outputs.maven_exit_code }}\`"
-            echo "- Deployment: \`Not configured\`"
+            echo "- Application: \`${PAPI_APPLICATION_NAME:-not configured}\`"
+            echo "- Environment: \`${ANYPOINT_ENVIRONMENT:-not configured}\`"
+            echo "- Target: \`${CLOUDHUB_TARGET:-not configured}\`"
+            echo "- API Autodiscovery flow: \`customer-process-apiraml-main\`"
+            echo "- Deployment requested: \`$DEPLOY_REQUESTED\`"
+
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && \
+               [ "$GITHUB_REF" = "refs/heads/main" ] && \
+               [ "$DEPLOY_REQUESTED" = "true" ]; then
+              echo "- Exchange publishing: \`Enabled\`"
+              echo "- CloudHub 2.0 deployment: \`Enabled\`"
+            else
+              echo "- Exchange publishing: \`Not executed\`"
+              echo "- CloudHub 2.0 deployment: \`Not executed\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

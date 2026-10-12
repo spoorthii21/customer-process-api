@@ -10,7 +10,7 @@
           http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
     <!-- PATCH /cases/{caseId} -->
-    <flow name="patch:\cases\(caseId):application\json:customer-process-apiraml-config" doc:id="a5843031-a952-464f-a385-cc232ba821dc">
+    <flow name="patch:\cases\(caseId):application\json:customer-process-apiraml-config" doc:id="b2c61ec3-36dc-4466-9d32-1a2d4eada1de">
 
         <!-- 1. Log incoming request -->
         <logger
@@ -79,7 +79,7 @@ output application/json
 
         <!-- 8. Log SAPI PATCH result -->
         <logger
-            level="INFO"
+            level="DEBUG"
             doc:name="Log Case Update Status"
             message="Process Layer: Case update returned HTTP #[vars.caseUpdateStatusCode] for Case ID #[vars.caseId]"/>
 
@@ -92,7 +92,7 @@ output application/json
             (vars.caseUpdateResponse.status default "failed") != "success"]'>
 
                 <logger
-                    level="ERROR"
+                    level="DEBUG"
                     doc:name="Log Case Update Failure"
                     message="Process Layer: Case update failed for Case ID #[vars.caseId] with HTTP #[vars.caseUpdateStatusCode]"/>
 
@@ -173,7 +173,7 @@ vars.caseUpdateStatusCode default 500
             <otherwise>
 
                 <logger
-                    level="INFO"
+                    level="DEBUG"
                     doc:name="Log Case Update Success"
                     message="Process Layer: Case #[vars.caseId] updated successfully"/>
 
@@ -276,10 +276,10 @@ output application/java
         </http:request>
 
         <!-- 4. Log the real SAPI status -->
-        <set-variable value="#[payload]" doc:name="Store Customer Check Response" doc:id="77a09b0f-38f0-48cf-9b93-9e2e568bffcc" variableName="customerCheckResponse"/>
-        <set-variable value="#[attributes.statusCode]" doc:name="Store Customer Check Status Code" doc:id="e44c777d-8de9-41df-a272-fb6f01e68e20" variableName="customerCheckStatusCode"/>
+        <set-variable value="#[payload]" doc:name="Store Customer Check Response" doc:id="3ae1f571-0199-4076-bb09-da4b9dc7ea88" variableName="customerCheckResponse"/>
+        <set-variable value="#[attributes.statusCode]" doc:name="Store Customer Check Status Code" doc:id="200cb869-6707-4028-a78d-a111443257dd" variableName="customerCheckStatusCode"/>
         <logger
-            level="INFO"
+            level="DEBUG"
             doc:name="Log Customer Validation Status"
             message='Process Layer: Customer validation returned HTTP #[vars.customerCheckStatusCode] with status #[vars.customerCheckResponse.status default "missing"]'/>
 
@@ -294,7 +294,7 @@ output application/java
             <when expression='#[vars.customerCheckStatusCode &gt;= 400&#10;or&#10;(vars.customerCheckResponse.status default "failed") != "success"]'>
 
                 <logger
-                    level="WARN"
+                    level="DEBUG"
                     doc:name="Log Customer Validation Failure"
                     message="Process Layer: Customer validation failed for ID #[vars.customerId]"/>
 
@@ -366,8 +366,8 @@ vars.customerCheckStatusCode default 500]]></ee:set-variable>
 
             <!-- Customer is valid -->
             <when expression='#[isEmpty(vars.customerCheckResponse.data.contactId default "")]'>
-                <logger level="WARN" doc:name="Logger" doc:id="3a0b0986-7b2f-44d7-8f42-9adb9e71edf1" message="Process Layer: Customer #[vars.customerId] was not found. Case-history retrieval stopped."/>
-                <ee:transform doc:name="Transform Message" doc:id="97307372-b471-414f-8344-91961e802248" >
+                <logger level="DEBUG" doc:name="Logger" doc:id="15d2b592-cd08-40ab-ba21-6e9e2167d659" message="Process Layer: Customer #[vars.customerId] was not found. Case-history retrieval stopped."/>
+                <ee:transform doc:name="Transform Message" doc:id="b782532a-b147-493d-b40f-511aab55eb43" >
                     <ee:message >
                         <ee:set-payload ><![CDATA[%dw 2.0
 output application/json
@@ -393,7 +393,7 @@ output application/java
             <otherwise>
 
                 <logger
-                    level="INFO"
+                    level="DEBUG"
                     doc:name="Log Customer Verification Success"
                     message="Process Layer: Customer verified. Fetching case history."/>
 
@@ -417,15 +417,15 @@ output application/java
                 </http:request>
 
                 <!-- 7. Check the case-history response -->
-                <set-variable value="#[payload]" doc:name="Store Case History Response" doc:id="5f47f21f-7ea2-4ce6-84e1-30466a1bdfb7" variableName="caseHistoryResponse"/>
-                <set-variable value="#[attributes.statusCode]" doc:name="Store Case History Status Code" doc:id="85924e24-5e9f-4944-96e6-d1a3beb832ac" variableName="caseHistoryStatusCode"/>
-                <logger level="INFO" doc:name="Logger" doc:id="5fb54997-a08a-4280-9e73-6e1b2c377b18" message="Process Layer: Case-history retrieval returned HTTP #[vars.caseHistoryStatusCode]"/>
+                <set-variable value="#[payload]" doc:name="Store Case History Response" doc:id="b965aed7-2ddb-4924-9872-df4cdfec1d40" variableName="caseHistoryResponse"/>
+                <set-variable value="#[attributes.statusCode]" doc:name="Store Case History Status Code" doc:id="52182a40-3812-4171-ae3e-337591c8619d" variableName="caseHistoryStatusCode"/>
+                <logger level="DEBUG" doc:name="Logger" doc:id="20f388cb-cc0b-4333-b09d-989d351a4dd4" message="Process Layer: Case-history retrieval returned HTTP #[vars.caseHistoryStatusCode]"/>
                 <choice doc:name="Case History Retrieved?">
 
                     <when expression='#[vars.caseHistoryStatusCode &gt;= 400&#10;or&#10;(vars.caseHistoryResponse.status default "failed") != "success"]'>
 
                         <logger
-                            level="WARN"
+                            level="DEBUG"
                             doc:name="Log Case History Failure"
                             message="Process Layer: Case history retrieval failed for customer #[vars.customerId]"/>
 
@@ -517,7 +517,7 @@ output application/java
                         </ee:transform>
 
                         <logger
-                            level="INFO"
+                            level="DEBUG"
                             doc:name="Log Case History Success"
                             message="Process Layer: Customer cases retrieved successfully"/>
 
@@ -562,18 +562,18 @@ output application/java
         </http:request>
 
         <!-- 5. SAFE PARSING STEP: Safely reads the SAPI response as an object wrapper without crashing -->
-        <set-variable value="#[payload]" doc:name="Store Customer Check Response" doc:id="9dcc926a-d99f-4141-98db-30d359bbc5de" variableName="customerCheckResponse"/>
+        <set-variable value="#[payload]" doc:name="Store Customer Check Response" doc:id="13cf6c99-49c2-4931-9a7a-0d966de43227" variableName="customerCheckResponse"/>
         <set-variable value="#[attributes.statusCode]" doc:name="Set Customer Status Code" variableName="customerCheckStatusCode"/>
 
         <!-- 6. Log backend validation result -->
-        <logger level="INFO" doc:name="Log Customer Validation Status" message="Process Layer: Customer validation returned HTTP #[vars.customerCheckStatusCode]"/>
+        <logger level="DEBUG" doc:name="Log Customer Validation Status" message="Process Layer: Customer validation returned HTTP #[vars.customerCheckStatusCode]"/>
 
         <!-- 7. Customer validation decision choice router -->
         <choice doc:name="Customer Exists?">
 
             <!-- Invalid ID or Missing Customer Block (404) -->
             <when expression='#[vars.customerCheckStatusCode &gt;= 400&#10;or&#10;(vars.customerCheckResponse.status default "failed") != "success"]'>
-                <logger level="WARN" doc:name="Log Customer Validation Failure" message="Process Layer: Customer validation failed for ID #[vars.customerId]"/>
+                <logger level="DEBUG" doc:name="Log Customer Validation Failure" message="Process Layer: Customer validation failed for ID #[vars.customerId]"/>
 
                 <ee:transform doc:name="Transform Customer Validation Error">
                     <ee:message>
@@ -611,8 +611,8 @@ vars.customerCheckStatusCode default 500]]></ee:set-variable>
 
             <!-- Customer exists - Proceed to Case Creation -->
             <when expression='#[isEmpty(vars.customerCheckResponse.data.contactId default "")]'>
-                <logger level="INFO" doc:name="Log Customer Not Found" doc:id="e666524d-cfbe-4003-8b33-4ac93b6e2f23" message="Process Layer: No customer found for ID #[vars.customerId]. Case will not be created."/>
-                <ee:transform doc:name="Transform Message" doc:id="c515c36c-8caa-4c8e-9db7-3889b303a182" >
+                <logger level="DEBUG" doc:name="Log Customer Not Found" doc:id="b73a5ff4-ae33-41ce-b26d-33999d59b158" message="Process Layer: No customer found for ID #[vars.customerId]. Case will not be created."/>
+                <ee:transform doc:name="Transform Message" doc:id="13bd3969-8a51-41a9-b5bc-002be736aa50" >
                     <ee:message >
                         <ee:set-payload ><![CDATA[%dw 2.0
 output application/json
@@ -637,7 +637,7 @@ output application/java
                 </ee:transform>
             </when>
             <otherwise>
-                <logger level="INFO" doc:name="Log Customer Validation Success" message="Process Layer: Customer #[vars.customerId] validated successfully. Creating case."/>
+                <logger level="DEBUG" doc:name="Log Customer Validation Success" message="Process Layer: Customer #[vars.customerId] validated successfully. Creating case."/>
 
                 <ee:transform doc:name="Build SAPI Case Request">
                     <ee:message>
@@ -669,7 +669,7 @@ output application/json
 
                     <!-- Case creation failed path (400 / 500) -->
                     <when expression='#[vars.caseCreateStatusCode &gt;= 400&#10;or&#10;(vars.caseCreateResponse.status default "failed") != "success"]'>
-                        <logger level="ERROR" doc:name="Log Case Creation Failure" message="Process Layer: Case creation failed for customer #[vars.customerId]"/>
+                        <logger level="DEBUG" doc:name="Log Case Creation Failure" message="Process Layer: Case creation failed for customer #[vars.customerId]"/>
                         <ee:transform doc:name="Transform Case Creation Error">
                             <ee:message>
                                 <ee:set-payload><![CDATA[%dw 2.0
@@ -695,8 +695,8 @@ vars.caseCreateStatusCode default 500]]></ee:set-variable>
 
                     <!-- Case created successfully path (201) -->
                     <when expression='#[isEmpty(vars.caseCreateResponse.id default "")]'>
-                        <logger level="INFO" doc:name="Logger" doc:id="75ec8590-9cf9-4fb2-8bbe-cb9a083d3f98" />
-                        <ee:transform doc:name="Transform Message" doc:id="9772ba5b-8750-41bf-91e6-688da2bfd446" >
+                        <logger level="DEBUG" doc:name="log case empty" doc:id="90b41e96-f667-400d-ad4d-0fd60d609e3d" message="Empty case"/>
+                        <ee:transform doc:name="Transform Message" doc:id="f4047b97-0fa2-4a85-9c6b-a60dc616e6db" >
                             <ee:message >
                                 <ee:set-payload ><![CDATA[%dw 2.0
 output application/json
@@ -714,7 +714,7 @@ output application/json
                         </ee:transform>
                     </when>
                     <otherwise>
-                        <logger level="INFO" doc:name="Log Case Creation Success" message="Process Layer: Case created successfully for customer #[vars.customerId]" />
+                        <logger level="DEBUG" doc:name="Log Case Creation Success" message="Process Layer: Case created successfully for customer #[vars.customerId]" />
                         <ee:transform doc:name="Transform Case Success Response">
                             <ee:message>
                                 <ee:set-payload><![CDATA[%dw 2.0

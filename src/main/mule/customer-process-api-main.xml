@@ -14,7 +14,7 @@
 
         <http:listener
             config-ref="customer-process-apiraml-httpListenerConfig"
-            path="/api/*">
+            path="/api/*" doc:name="Listener to APIKIt">
 
             <http:response statusCode="#[vars.httpStatus default 200]">
                 <http:headers>#[vars.outboundHeaders default {}]</http:headers>
@@ -27,7 +27,7 @@
 
         </http:listener>
 
-        <apikit:router config-ref="customer-process-apiraml-config"/>
+        <apikit:router config-ref="customer-process-apiraml-config" doc:name="APIkit  router for papi"/>
 
     </flow>
 
@@ -35,7 +35,7 @@
 
         <http:listener
             config-ref="customer-process-apiraml-httpListenerConfig"
-            path="/console/*">
+            path="/console/*" doc:name="Listener console for papi">
 
             <http:response statusCode="#[vars.httpStatus default 200]">
                 <http:headers>#[vars.outboundHeaders default {}]</http:headers>
@@ -48,7 +48,7 @@
 
         </http:listener>
 
-        <apikit:console config-ref="customer-process-apiraml-config"/>
+        <apikit:console config-ref="customer-process-apiraml-config" doc:name="APIkit Console for papi"/>
 
     </flow>
 

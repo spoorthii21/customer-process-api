@@ -7,7 +7,7 @@
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns="http://www.mulesoft.org/schema/mule/core"
       xsi:schemaLocation="
-http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd 
         http://www.mulesoft.org/schema/mule/core
         http://www.mulesoft.org/schema/mule/core/current/mule.xsd
         http://www.mulesoft.org/schema/mule/munit
@@ -19,140 +19,139 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
 
     <munit:config name="subflows-suite.xml"/>
 
-    <!-- ================================================================ -->
-    <!-- TEST 1: check-customer-exists-sub-flow                          -->
-    <!-- Processors: logger + http:request (target=customerCheckResponse) -->
-    <!-- FIX: whereValue uses exact production doc:name "By Id" (lowercase d) -->
-    <!-- ================================================================ -->
+    <!-- ========================================================= -->
+    <!-- TEST 01: CHECK CUSTOMER EXISTS                            -->
+    <!-- ========================================================= -->
 
-<munit:test
-        name="check-customer-exists-success"
-        description="check-customer-exists-sub-flow stores GET Contact response in customerCheckResponse var">
+    <munit:test
+        name="check-customer-exists-success-test"
+        description="Verify the contact lookup response is stored in customerCheckResponse">
 
-    <munit:behavior>
+        <munit:behavior>
 
-        <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call SAPI GET Contact By Id">
+            <munit-tools:mock-when
+                doc:name="Mock Salesforce System API Get Contact By ID"
+                processor="http:request">
 
-            <munit-tools:with-attributes>
-                <munit-tools:with-attribute
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By Id"/>
-            </munit-tools:with-attributes>
+                        whereValue="Call Salesforce System API Get Contact By ID"/>
+                </munit-tools:with-attributes>
 
-            <munit-tools:then-return>
+                <munit-tools:then-return>
 
-                <munit-tools:variables>
-                    <munit-tools:variable
+                    <munit-tools:variables>
+                        <munit-tools:variable
                             key="customerCheckResponse"
-                            mediaType="application/java"
-                            value='#[{
-                                status: "success",
-                                data: {
-                                    contactId: "003bm000022PMWDAA4",
-                                    firstName: "John",
-                                    lastName: "Doe"
-                                }
-                            }]'/>
-                </munit-tools:variables>
+                            mediaType="application/json"
+                            value="#[output application/json
+---
+{
+    status: 'success',
+    data: {
+        contactId: '003bm000022PMWDAA4',
+        firstName: 'John',
+        lastName: 'Doe'
+    }
+}]"/>
+                    </munit-tools:variables>
 
-            </munit-tools:then-return>
+                </munit-tools:then-return>
 
-        </munit-tools:mock-when>
+            </munit-tools:mock-when>
 
-    </munit:behavior>
+        </munit:behavior>
 
-    <munit:execution>
+        <munit:execution>
 
-        <munit:set-event doc:name="Set Check Customer Event">
+            <munit:set-event doc:name="Set Customer Verification Event">
 
-            <munit:variables>
-                <munit:variable
+                <munit:variables>
+                    <munit:variable
                         key="customerId"
-                        value='#["003bm000022PMWDAA4"]'
+                        value="#['003bm000022PMWDAA4']"
                         mediaType="application/java"/>
-            </munit:variables>
+                </munit:variables>
 
-        </munit:set-event>
+            </munit:set-event>
 
-        <flow-ref
-                doc:name="Execute check-customer-exists-sub-flow"
+            <flow-ref
+                doc:name="Execute Check Customer Exists Subflow"
                 name="check-customer-exists-sub-flow"/>
 
-    </munit:execution>
+        </munit:execution>
 
-    <munit:validation>
+        <munit:validation>
 
-        <munit-tools:assert-that
+            <munit-tools:assert-that
                 doc:name="Assert Customer Check Status"
                 expression="#[vars.customerCheckResponse.status]"
-                is='#[MunitTools::equalTo("success")]'/>
+                is="#[MunitTools::equalTo('success')]"/>
 
-        <munit-tools:assert-that
+            <munit-tools:assert-that
                 doc:name="Assert Customer Check Contact ID"
                 expression="#[vars.customerCheckResponse.data.contactId]"
-                is='#[MunitTools::equalTo("003bm000022PMWDAA4")]'/>
+                is="#[MunitTools::equalTo('003bm000022PMWDAA4')]"/>
 
-        <munit-tools:verify-call
-                doc:name="Verify GET Contact By Id Called Once"
+            <munit-tools:verify-call
+                doc:name="Verify Contact Lookup Called Once"
                 processor="http:request"
                 times="1">
-
-            <munit-tools:with-attributes>
-                <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By Id"/>
-            </munit-tools:with-attributes>
-
-        </munit-tools:verify-call>
-
-    </munit:validation>
-
-</munit:test>
-    <!-- ================================================================ -->
-    <!-- TEST 2: process-account-logic-sub-flow — WHEN (account exists)   -->
-    <!-- Covers: logger, GET account, parse vars x2, logger,             -->
-    <!--   choice-when: logger + set-variable (Store Existing Account ID) -->
-    <!-- ================================================================ -->
-
-    <munit:test
-        name="process-account-exists-branch"
-        description="process-account-logic: existing account found, finalAccountId set from data[0].id">
-
-        <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call SAPI GET Account By Name Exists">
 
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Account By Name"/>
+                        whereValue="Call Salesforce System API Get Contact By ID"/>
+                </munit-tools:with-attributes>
+
+            </munit-tools:verify-call>
+
+        </munit:validation>
+
+    </munit:test>
+
+    <!-- ========================================================= -->
+    <!-- TEST 02: PROCESS EXISTING ACCOUNT                         -->
+    <!-- ========================================================= -->
+
+    <munit:test
+        name="process-account-existing-account-test"
+        description="Verify an existing account ID is selected without creating another account">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                doc:name="Mock Salesforce System API Existing Account Lookup"
+                processor="http:request">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call Salesforce System API Get Account By Name"/>
                 </munit-tools:with-attributes>
 
                 <munit-tools:then-return>
 
                     <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Account found",
-                            data: [
-                                {
-                                    id: "001bm00000ABC123",
-                                    name: "Acme Corp",
-                                    "type": "Customer"
-                                }
-                            ]
-                        }]'/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    status: 'success',
+    message: 'Account found',
+    data: [
+        {
+            id: '001bm00000ABC123',
+            name: 'Acme Corp',
+            'type': 'Customer'
+        }
+    ]
+}]"/>
 
                     <munit-tools:attributes
                         mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
+                        value="#[{statusCode: 200}]"/>
 
                 </munit-tools:then-return>
 
@@ -162,22 +161,28 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
 
         <munit:execution>
 
-            <munit:set-event doc:name="Set Process Account Exists Event">
+            <munit:set-event doc:name="Set Existing Account Event">
+
                 <munit:variables>
+
                     <munit:variable
                         key="originalPayload"
-                        value='#[{
-                            accountName: "Acme Corp",
-                            firstName: "Jane",
-                            lastName: "Smith",
-                            email: "jane@acme.com"
-                        }]'
-                        mediaType="application/java"/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    accountName: 'Acme Corp',
+    firstName: 'Jane',
+    lastName: 'Smith',
+    email: 'jane@acme.com'
+}]"/>
+
                 </munit:variables>
+
             </munit:set-event>
 
             <flow-ref
-                doc:name="Execute process-account-logic-sub-flow Exists"
+                doc:name="Execute Process Account Logic Subflow"
                 name="process-account-logic-sub-flow"/>
 
         </munit:execution>
@@ -185,103 +190,115 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
         <munit:validation>
 
             <munit-tools:assert-that
-                doc:name="Assert finalAccountId set from existing account"
+                doc:name="Assert Existing Account ID"
                 expression="#[vars.finalAccountId]"
-                is='#[MunitTools::equalTo("001bm00000ABC123")]'/>
+                is="#[MunitTools::equalTo('001bm00000ABC123')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Existing Account Type"
+                expression="#[vars.accountCheckResponse.data[0]['type']]"
+                is="#[MunitTools::equalTo('Customer')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Account Lookup Status Code"
+                expression="#[vars.accountCheckStatusCode]"
+                is="#[MunitTools::equalTo(200)]"/>
 
             <munit-tools:verify-call
-                doc:name="Verify GET Account By Name called once for exists"
+                doc:name="Verify Existing Account Lookup Called Once"
                 processor="http:request"
                 times="1">
+
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Account By Name"/>
+                        whereValue="Call Salesforce System API Get Account By Name"/>
                 </munit-tools:with-attributes>
+
             </munit-tools:verify-call>
 
             <munit-tools:verify-call
-                doc:name="Verify POST Account NOT called when account exists"
+                doc:name="Verify Account Creation Was Not Called"
                 processor="http:request"
                 times="0">
+
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI POST Account"/>
+                        whereValue="Call Salesforce System API Create Account"/>
                 </munit-tools:with-attributes>
+
             </munit-tools:verify-call>
 
         </munit:validation>
 
     </munit:test>
 
-    <!-- ================================================================ -->
-    <!-- TEST 3: process-account-logic-sub-flow — OTHERWISE (create)      -->
-    <!-- Covers: logger, transform, POST account, parse vars x3           -->
-    <!-- FIX: POST mock payload uses double-quoted "type" key             -->
-    <!-- ================================================================ -->
+    <!-- ========================================================= -->
+    <!-- TEST 03: PROCESS NEW ACCOUNT                              -->
+    <!-- ========================================================= -->
 
     <munit:test
-        name="process-account-create-branch"
-        description="process-account-logic: account missing, new account created, finalAccountId from POST response">
+        name="process-account-new-account-test"
+        description="Verify a missing account is created and its ID is stored">
 
         <munit:behavior>
 
             <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call SAPI GET Account By Name Missing">
+                doc:name="Mock Salesforce System API Empty Account Lookup"
+                processor="http:request">
 
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Account By Name"/>
+                        whereValue="Call Salesforce System API Get Account By Name"/>
                 </munit-tools:with-attributes>
 
                 <munit-tools:then-return>
 
                     <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "No accounts found",
-                            data: []
-                        }]'/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    status: 'success',
+    message: 'No accounts found',
+    data: []
+}]"/>
 
                     <munit-tools:attributes
                         mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
+                        value="#[{statusCode: 200}]"/>
 
                 </munit-tools:then-return>
 
             </munit-tools:mock-when>
 
             <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call SAPI POST Account Create">
+                doc:name="Mock Salesforce System API Account Creation"
+                processor="http:request">
 
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI POST Account"/>
+                        whereValue="Call Salesforce System API Create Account"/>
                 </munit-tools:with-attributes>
 
                 <munit-tools:then-return>
 
                     <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            id: "001bm00000NEW456",
-                            name: "New Corp",
-                            "type": "Customer"
-                        }]'/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    id: '001bm00000NEW456',
+    name: 'New Corp',
+    'type': 'Customer'
+}]"/>
 
                     <munit-tools:attributes
                         mediaType="application/java"
-                        value="#[{
-                            statusCode: 201
-                        }]"/>
+                        value="#[{statusCode: 201}]"/>
 
                 </munit-tools:then-return>
 
@@ -291,22 +308,28 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
 
         <munit:execution>
 
-            <munit:set-event doc:name="Set Process Account Create Event">
+            <munit:set-event doc:name="Set New Account Event">
+
                 <munit:variables>
+
                     <munit:variable
                         key="originalPayload"
-                        value='#[{
-                            accountName: "New Corp",
-                            firstName: "Tom",
-                            lastName: "Jones",
-                            email: "tom@newcorp.com"
-                        }]'
-                        mediaType="application/java"/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    accountName: 'New Corp',
+    firstName: 'Tom',
+    lastName: 'Jones',
+    email: 'tom@newcorp.com'
+}]"/>
+
                 </munit:variables>
+
             </munit:set-event>
 
             <flow-ref
-                doc:name="Execute process-account-logic-sub-flow Create"
+                doc:name="Execute Process Account Logic Subflow"
                 name="process-account-logic-sub-flow"/>
 
         </munit:execution>
@@ -314,79 +337,91 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
         <munit:validation>
 
             <munit-tools:assert-that
-                doc:name="Assert finalAccountId set from new account POST response"
+                doc:name="Assert Created Account ID"
                 expression="#[vars.finalAccountId]"
-                is='#[MunitTools::equalTo("001bm00000NEW456")]'/>
+                is="#[MunitTools::equalTo('001bm00000NEW456')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Created Account Type"
+                expression="#[vars.accountCreateResponse['type']]"
+                is="#[MunitTools::equalTo('Customer')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Account Creation Status Code"
+                expression="#[vars.accountCreateStatusCode]"
+                is="#[MunitTools::equalTo(201)]"/>
 
             <munit-tools:verify-call
-                doc:name="Verify GET Account By Name called once for create"
+                doc:name="Verify Empty Account Lookup Called Once"
                 processor="http:request"
                 times="1">
+
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Account By Name"/>
+                        whereValue="Call Salesforce System API Get Account By Name"/>
                 </munit-tools:with-attributes>
+
             </munit-tools:verify-call>
 
             <munit-tools:verify-call
-                doc:name="Verify POST Account called once to create"
+                doc:name="Verify Account Creation Called Once"
                 processor="http:request"
                 times="1">
+
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI POST Account"/>
+                        whereValue="Call Salesforce System API Create Account"/>
                 </munit-tools:with-attributes>
+
             </munit-tools:verify-call>
 
         </munit:validation>
 
     </munit:test>
 
-    <!-- ================================================================ -->
-    <!-- TEST 4: process-contact-logic-sub-flow — WHEN (duplicate)        -->
-    <!-- Covers: logger, GET contact, parse vars x2, logger,             -->
-    <!--   choice-when: logger + transform + raise-error                  -->
-    <!-- Raises CUSTOM:DUPLICATE_RECORD                                   -->
-    <!-- ================================================================ -->
+    <!-- ========================================================= -->
+    <!-- TEST 04: PROCESS DUPLICATE CONTACT                        -->
+    <!-- ========================================================= -->
 
     <munit:test
-        name="process-contact-duplicate-branch"
-        description="process-contact-logic: contact found, raises CUSTOM:DUPLICATE_RECORD"
+        name="process-contact-duplicate-contact-test"
+        description="Verify an existing contact raises CUSTOM:DUPLICATE_RECORD"
         expectedErrorType="CUSTOM:DUPLICATE_RECORD">
 
         <munit:behavior>
 
             <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call SAPI GET Contact By Email Existing">
+                doc:name="Mock Salesforce System API Existing Contact Lookup"
+                processor="http:request">
 
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By Email"/>
+                        whereValue="Call Salesforce System API Get Contact By Email"/>
                 </munit-tools:with-attributes>
 
                 <munit-tools:then-return>
 
                     <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Contact found",
-                            data: {
-                                contactId: "003bm000022PMWDAA4",
-                                firstName: "Jane",
-                                email: "jane@acme.com"
-                            }
-                        }]'/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    status: 'success',
+    message: 'Contact found',
+    data: {
+        contactId: '003bm000022PMWDAA4',
+        firstName: 'Jane',
+        lastName: 'Smith',
+        email: 'jane@acme.com'
+    }
+}]"/>
 
                     <munit-tools:attributes
                         mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
+                        value="#[{statusCode: 200}]"/>
 
                 </munit-tools:then-return>
 
@@ -396,98 +431,104 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
 
         <munit:execution>
 
-            <munit:set-event doc:name="Set Process Contact Duplicate Event">
+            <munit:set-event doc:name="Set Duplicate Contact Event">
+
                 <munit:variables>
+
                     <munit:variable
                         key="originalPayload"
-                        value='#[{
-                            firstName: "Jane",
-                            lastName: "Smith",
-                            email: "jane@acme.com"
-                        }]'
-                        mediaType="application/java"/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    firstName: 'Jane',
+    lastName: 'Smith',
+    email: 'jane@acme.com'
+}]"/>
+
                     <munit:variable
                         key="finalAccountId"
-                        value='#["001bm00000ABC123"]'
+                        value="#['001bm00000ABC123']"
                         mediaType="application/java"/>
+
                 </munit:variables>
+
             </munit:set-event>
 
             <flow-ref
-                doc:name="Execute process-contact-logic-sub-flow Duplicate"
+                doc:name="Execute Process Contact Logic Subflow"
                 name="process-contact-logic-sub-flow"/>
 
         </munit:execution>
 
     </munit:test>
 
-    <!-- ================================================================ -->
-    <!-- TEST 5: process-contact-logic-sub-flow — OTHERWISE (new contact)  -->
-    <!-- Covers: logger, transform, POST contact, parse vars x2           -->
-    <!-- ================================================================ -->
+    <!-- ========================================================= -->
+    <!-- TEST 05: PROCESS NEW CONTACT                              -->
+    <!-- ========================================================= -->
 
     <munit:test
-        name="process-contact-new-creation-branch"
-        description="process-contact-logic: contact not found, new contact created, finalContactId set">
+        name="process-contact-new-contact-test"
+        description="Verify a missing contact is created and its ID is stored">
 
         <munit:behavior>
 
             <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call SAPI GET Contact By Email Not Found">
+                doc:name="Mock Salesforce System API Empty Contact Lookup"
+                processor="http:request">
 
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By Email"/>
+                        whereValue="Call Salesforce System API Get Contact By Email"/>
                 </munit-tools:with-attributes>
 
                 <munit-tools:then-return>
 
                     <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "No contact found",
-                            data: null
-                        }]'/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    status: 'success',
+    message: 'No contact found',
+    data: null
+}]"/>
 
                     <munit-tools:attributes
                         mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
+                        value="#[{statusCode: 200}]"/>
 
                 </munit-tools:then-return>
 
             </munit-tools:mock-when>
 
             <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call SAPI POST Contact Create">
+                doc:name="Mock Salesforce System API Contact Creation"
+                processor="http:request">
 
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI POST Contact"/>
+                        whereValue="Call Salesforce System API Create Contact"/>
                 </munit-tools:with-attributes>
 
                 <munit-tools:then-return>
 
                     <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            id: "003bm00000NEW789",
-                            firstName: "Tom",
-                            lastName: "New",
-                            email: "tom@newcorp.com"
-                        }]'/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    id: '003bm00000NEW789',
+    firstName: 'Tom',
+    lastName: 'New',
+    email: 'tom@newcorp.com'
+}]"/>
 
                     <munit-tools:attributes
                         mediaType="application/java"
-                        value="#[{
-                            statusCode: 201
-                        }]"/>
+                        value="#[{statusCode: 201}]"/>
 
                 </munit-tools:then-return>
 
@@ -497,25 +538,32 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
 
         <munit:execution>
 
-            <munit:set-event doc:name="Set Process Contact New Creation Event">
+            <munit:set-event doc:name="Set New Contact Event">
+
                 <munit:variables>
+
                     <munit:variable
                         key="originalPayload"
-                        value='#[{
-                            firstName: "Tom",
-                            lastName: "New",
-                            email: "tom@newcorp.com"
-                        }]'
-                        mediaType="application/java"/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    firstName: 'Tom',
+    lastName: 'New',
+    email: 'tom@newcorp.com'
+}]"/>
+
                     <munit:variable
                         key="finalAccountId"
-                        value='#["001bm00000ABC123"]'
+                        value="#['001bm00000ABC123']"
                         mediaType="application/java"/>
+
                 </munit:variables>
+
             </munit:set-event>
 
             <flow-ref
-                doc:name="Execute process-contact-logic-sub-flow New"
+                doc:name="Execute Process Contact Logic Subflow"
                 name="process-contact-logic-sub-flow"/>
 
         </munit:execution>
@@ -523,171 +571,81 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
         <munit:validation>
 
             <munit-tools:assert-that
-                doc:name="Assert finalContactId set from new contact POST response"
+                doc:name="Assert Created Contact ID"
                 expression="#[vars.finalContactId]"
-                is='#[MunitTools::equalTo("003bm00000NEW789")]'/>
+                is="#[MunitTools::equalTo('003bm00000NEW789')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Contact Lookup Status Code"
+                expression="#[vars.contactCheckStatusCode]"
+                is="#[MunitTools::equalTo(200)]"/>
 
             <munit-tools:verify-call
-                doc:name="Verify GET Contact By Email called once"
+                doc:name="Verify Empty Contact Lookup Called Once"
                 processor="http:request"
                 times="1">
+
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By Email"/>
+                        whereValue="Call Salesforce System API Get Contact By Email"/>
                 </munit-tools:with-attributes>
+
             </munit-tools:verify-call>
 
             <munit-tools:verify-call
-                doc:name="Verify POST Contact called once to create"
+                doc:name="Verify Contact Creation Called Once"
                 processor="http:request"
                 times="1">
+
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call SAPI POST Contact"/>
+                        whereValue="Call Salesforce System API Create Contact"/>
                 </munit-tools:with-attributes>
+
             </munit-tools:verify-call>
 
         </munit:validation>
 
     </munit:test>
 
-    <!-- ================================================================ -->
-    <!-- TEST 6: create-account-sub-flow                                  -->
-    <!-- Processors: logger + transform + POST (target=accountResult)     -->
-    <!-- FIX: whereValue uses exact production doc:name "Call Sys API POST Account" -->
-    <!-- FIX: 'type' key quoted correctly as "type" inside single-quoted attribute -->
-    <!-- ================================================================ -->
-<munit:test
-        name="create-account-success"
-        description="create-account-sub-flow builds account payload and stores POST response in accountResult">
-
-    <munit:behavior>
-
-        <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call Sys API POST Account">
-
-            <munit-tools:with-attributes>
-                <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call Sys API POST Account"/>
-            </munit-tools:with-attributes>
-
-            <munit-tools:then-return>
-
-                <munit-tools:variables>
-                    <munit-tools:variable
-                            key="accountResult"
-                            mediaType="application/java"
-                            value='#[{
-                                id: "001bm00000SYS999",
-                                name: "Sys Corp",
-                                "type": "Customer"
-                            }]'/>
-                </munit-tools:variables>
-
-            </munit-tools:then-return>
-
-        </munit-tools:mock-when>
-
-    </munit:behavior>
-
-    <munit:execution>
-
-        <munit:set-event doc:name="Set Create Account Sub Flow Event">
-
-            <munit:variables>
-                <munit:variable
-                        key="originalPayload"
-                        mediaType="application/java"
-                        value='#[{
-                            accountName: "Sys Corp",
-                            firstName: "Alice",
-                            lastName: "Cooper",
-                            email: "alice@syscorp.com"
-                        }]'/>
-            </munit:variables>
-
-        </munit:set-event>
-
-        <flow-ref
-                doc:name="Execute create-account-sub-flow"
-                name="create-account-sub-flow"/>
-
-    </munit:execution>
-
-    <munit:validation>
-
-        <munit-tools:assert-that
-                doc:name="Assert Account Result ID"
-                expression="#[vars.accountResult.id]"
-                is='#[MunitTools::equalTo("001bm00000SYS999")]'/>
-
-        <munit-tools:assert-that
-                doc:name="Assert Account Result Name"
-                expression="#[vars.accountResult.name]"
-                is='#[MunitTools::equalTo("Sys Corp")]'/>
-
-        <munit-tools:assert-that
-                doc:name="Assert Account Result Type"
-                expression='#[vars.accountResult."type"]'
-                is='#[MunitTools::equalTo("Customer")]'/>
-
-        <munit-tools:verify-call
-                doc:name="Verify POST Account Called Once"
-                processor="http:request"
-                times="1">
-
-            <munit-tools:with-attributes>
-                <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call Sys API POST Account"/>
-            </munit-tools:with-attributes>
-
-        </munit-tools:verify-call>
-
-    </munit:validation>
-
-</munit:test>
-    <!-- ================================================================ -->
-    <!-- TEST 7: create-contact-sub-flow                                  -->
-    <!-- Processors: logger + transform + POST contact                    -->
-    <!-- ================================================================ -->
+    <!-- ========================================================= -->
+    <!-- TEST 06: CREATE ACCOUNT SUBFLOW                           -->
+    <!-- ========================================================= -->
 
     <munit:test
-        name="create-contact-success"
-        description="create-contact-sub-flow builds contact payload and POSTs to SAPI">
+        name="create-account-success-test"
+        description="Verify create-account-sub-flow builds the account request and stores the response">
 
         <munit:behavior>
 
             <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock Call Sys API POST Contact">
+                doc:name="Mock Salesforce System API Create Account Subflow Request"
+                processor="http:request">
 
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call Sys API POST Contact"/>
+                        whereValue="Call Salesforce System API Create Account"/>
                 </munit-tools:with-attributes>
 
                 <munit-tools:then-return>
 
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            id: "003bm00000CTX888",
-                            firstName: "Alice",
-                            lastName: "Cooper",
-                            email: "alice@syscorp.com"
-                        }]'/>
+                    <munit-tools:variables>
 
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 201
-                        }]"/>
+                        <munit-tools:variable
+                            key="accountResult"
+                            mediaType="application/json"
+                            value="#[output application/json
+---
+{
+    id: '001bm00000SYS999',
+    name: 'System Corp',
+    'type': 'Customer'
+}]"/>
+
+                    </munit-tools:variables>
 
                 </munit-tools:then-return>
 
@@ -697,27 +655,141 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
 
         <munit:execution>
 
-            <munit:set-event doc:name="Set Create Contact Sub Flow Event">
+            <munit:set-event doc:name="Set Account Creation Subflow Event">
+
                 <munit:variables>
+
                     <munit:variable
                         key="originalPayload"
-                        value='#[{
-                            firstName: "Alice",
-                            lastName: "Cooper",
-                            email: "alice@syscorp.com"
-                        }]'
-                        mediaType="application/java"/>
-                    <munit:variable
-                        key="accountResult"
-                        value='#[{
-                            id: "001bm00000SYS999"
-                        }]'
-                        mediaType="application/java"/>
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    accountName: 'System Corp',
+    firstName: 'Alice',
+    lastName: 'Cooper',
+    email: 'alice@systemcorp.com'
+}]"/>
+
                 </munit:variables>
+
             </munit:set-event>
 
             <flow-ref
-                doc:name="Execute create-contact-sub-flow"
+                doc:name="Execute Create Account Subflow"
+                name="create-account-sub-flow"/>
+
+        </munit:execution>
+
+        <munit:validation>
+
+            <munit-tools:assert-that
+                doc:name="Assert Account Result ID"
+                expression="#[vars.accountResult.id]"
+                is="#[MunitTools::equalTo('001bm00000SYS999')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Account Result Name"
+                expression="#[vars.accountResult.name]"
+                is="#[MunitTools::equalTo('System Corp')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Account Result Type"
+                expression="#[vars.accountResult['type']]"
+                is="#[MunitTools::equalTo('Customer')]"/>
+
+            <munit-tools:verify-call
+                doc:name="Verify Create Account Subflow Request Called Once"
+                processor="http:request"
+                times="1">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call Salesforce System API Create Account"/>
+                </munit-tools:with-attributes>
+
+            </munit-tools:verify-call>
+
+        </munit:validation>
+
+    </munit:test>
+
+    <!-- ========================================================= -->
+    <!-- TEST 07: CREATE CONTACT SUBFLOW                           -->
+    <!-- ========================================================= -->
+
+    <munit:test
+        name="create-contact-success-test"
+        description="Verify create-contact-sub-flow builds the contact request and returns the created contact">
+
+        <munit:behavior>
+
+            <munit-tools:mock-when
+                doc:name="Mock Salesforce System API Create Contact Subflow Request"
+                processor="http:request">
+
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute
+                        attributeName="doc:name"
+                        whereValue="Call Salesforce System API Create Contact"/>
+                </munit-tools:with-attributes>
+
+                <munit-tools:then-return>
+
+                    <munit-tools:payload
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    id: '003bm00000CTX888',
+    firstName: 'Alice',
+    lastName: 'Cooper',
+    email: 'alice@systemcorp.com'
+}]"/>
+
+                    <munit-tools:attributes
+                        mediaType="application/java"
+                        value="#[{statusCode: 201}]"/>
+
+                </munit-tools:then-return>
+
+            </munit-tools:mock-when>
+
+        </munit:behavior>
+
+        <munit:execution>
+
+            <munit:set-event doc:name="Set Contact Creation Subflow Event">
+
+                <munit:variables>
+
+                    <munit:variable
+                        key="originalPayload"
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    firstName: 'Alice',
+    lastName: 'Cooper',
+    email: 'alice@systemcorp.com'
+}]"/>
+
+                    <munit:variable
+                        key="accountResult"
+                        mediaType="application/json"
+                        value="#[output application/json
+---
+{
+    id: '001bm00000SYS999'
+}]"/>
+
+                </munit:variables>
+
+            </munit:set-event>
+
+            <flow-ref
+                doc:name="Execute Create Contact Subflow"
                 name="create-contact-sub-flow"/>
 
         </munit:execution>
@@ -725,19 +797,31 @@ http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/mu
         <munit:validation>
 
             <munit-tools:assert-that
-                doc:name="Assert payload id from POST response"
+                doc:name="Assert Created Contact Response ID"
                 expression="#[payload.id]"
-                is='#[MunitTools::equalTo("003bm00000CTX888")]'/>
+                is="#[MunitTools::equalTo('003bm00000CTX888')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Created Contact First Name"
+                expression="#[payload.firstName]"
+                is="#[MunitTools::equalTo('Alice')]"/>
+
+            <munit-tools:assert-that
+                doc:name="Assert Created Contact Last Name"
+                expression="#[payload.lastName]"
+                is="#[MunitTools::equalTo('Cooper')]"/>
 
             <munit-tools:verify-call
-                doc:name="Verify POST Contact called once in create-contact-sub-flow"
+                doc:name="Verify Create Contact Subflow Request Called Once"
                 processor="http:request"
                 times="1">
+
                 <munit-tools:with-attributes>
                     <munit-tools:with-attribute
                         attributeName="doc:name"
-                        whereValue="Call Sys API POST Contact"/>
+                        whereValue="Call Salesforce System API Create Contact"/>
                 </munit-tools:with-attributes>
+
             </munit-tools:verify-call>
 
         </munit:validation>

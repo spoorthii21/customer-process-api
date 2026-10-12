@@ -34,7 +34,7 @@
         <set-variable value="#[attributes.statusCode]" doc:name="Set Backend Status Code" variableName="backendStatusCode"/>
 
         <!-- 5. Log response status without logging sensitive profile data -->
-        <logger level="INFO" doc:name="Log SAPI Response Status" message="Process Layer: SAPI customer lookup returned HTTP status #[vars.backendStatusCode]"/>
+        <logger level="DEBUG" doc:name="Log SAPI Response Status" message="Process Layer: SAPI customer lookup returned HTTP status #[vars.backendStatusCode]"/>
 
         <!-- 6. Decide between error and success response -->
         <choice doc:name="Customer Profile Found?">
@@ -42,7 +42,7 @@
             <!-- Error branch: If HTTP status is 400+ or payload has an error status flag -->
             <when expression='#[vars.backendStatusCode &gt;= 400&#10;or&#10;(payload.status default "failed") != "success"]'>
 
-                <logger level="WARN" doc:name="Log Customer Lookup Failure" message="Process Layer: Customer profile lookup failed for ID #[vars.customerId]. Backend status: #[vars.backendStatusCode]"/>
+                <logger level="DEBUG" doc:name="Log Customer Lookup Failure" message="Process Layer: Customer profile lookup failed for ID #[vars.customerId]. Backend status: #[vars.backendStatusCode]"/>
 
                 <!-- Preserve the structured SAPI error -->
                 <ee:transform doc:name="Transform Customer Error Response">
@@ -101,7 +101,7 @@ vars.backendStatusCode default 500]]></ee:set-variable>
 
             <!-- Successful customer profile path -->
             <when expression='#[isEmpty(payload.data.contactId default "")]'>
-				<logger level="INFO" doc:name="Logger" doc:id="3b1b4aa2-a08a-43df-8e2d-5db797f2bc91" message="Process Layer: No customer profile found for ID #[vars.customerId]"/>
+				<logger level="DEBUG" doc:name="Logger" doc:id="3b1b4aa2-a08a-43df-8e2d-5db797f2bc91" message="Process Layer: No customer profile found for ID #[vars.customerId]"/>
 				<ee:transform doc:name="Transform Message" doc:id="76b449a4-8be6-43e6-b0ec-9b476d12dbfc" >
 					<ee:message >
 						<ee:set-payload ><![CDATA[%dw 2.0
@@ -127,7 +127,7 @@ output application/java
 			</when>
 			<otherwise>
 
-                <logger level="INFO" doc:name="Log Customer Profile Success" message="Process Layer: Customer profile found successfully for ID #[vars.customerId]"/>
+                <logger level="DEBUG" doc:name="Log Customer Profile Success" message="Process Layer: Customer profile found successfully for ID #[vars.customerId]"/>
 
                 <ee:transform doc:name="Transform Customer Profile Response">
                     <ee:message>

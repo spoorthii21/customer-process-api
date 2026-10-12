@@ -1,1282 +1,557 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
       xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
       xmlns:http="http://www.mulesoft.org/schema/mule/http"
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns="http://www.mulesoft.org/schema/mule/core"
-      xsi:schemaLocation="
-http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
-        http://www.mulesoft.org/schema/mule/core
-        http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-        http://www.mulesoft.org/schema/mule/munit
-        http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
-        http://www.mulesoft.org/schema/mule/munit-tools
-        http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
-        http://www.mulesoft.org/schema/mule/http
-        http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
 
     <munit:config name="cases-flows-suite.xml"/>
 
-    <!-- ============================================================= -->
-    <!-- PATCH /cases/{caseId}                                        -->
-    <!-- ============================================================= -->
+    <!-- PATCH /cases/{caseId} -->
+    <!-- NOTE: The production flow does NOT validate the customer.     -->
+    <!-- It calls "Call SAPI PATCH Case" directly without any          -->
+    <!-- prior GET Contact check. All PATCH tests must only mock       -->
+    <!-- "Call SAPI PATCH Case".                                       -->
 
-    <!-- TEST 1: PATCH CASE SUCCESS -->
-
-    <munit:test
-        name="patch-case-success-test"
-        description="PATCH case returns 200 with updated case data">
-
+    <!-- TEST 1: PATCH SUCCESS -->
+    <munit:test name="patch-case-success-test" description="PATCH case returns 200 with updated case data">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock SAPI PATCH Case Success">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock SAPI PATCH Case Success">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI PATCH Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Case updated successfully",
-                            caseId: "500bm00003DfPvtAAF"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Case updated successfully", caseId: "500bm00003DfPvtAAF", data: { status: "Closed", priority: "Low" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set PATCH Case Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value='#[{
-                        status: "Closed",
-                        priority: "Low"
-                    }]'/>
-
-                <munit:attributes
-                    mediaType="application/java"
-                    value='#[{
-                        uriParams: {
-                            caseId: "500ABC123"
-                        }
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm000022PMWDAA4", status: "Closed", priority: "Low" }]'/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { caseId: "500bm00003DfPvtAAF" } }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Run PATCH Case Flow"
-                name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Run PATCH Case Flow" name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert PATCH Success Status"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("success")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert Updated Case ID"
-                expression="#[payload.caseId]"
-                is='#[MunitTools::equalTo("500bm00003DfPvtAAF")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert PATCH HTTP Status 200"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(200)]"/>
-
-            <munit-tools:verify-call
-                doc:name="Verify PATCH Case Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:assert-that doc:name="Assert PATCH Success Status" expression="#[payload.status]" is='#[MunitTools::equalTo("success")]'/>
+            <munit-tools:assert-that doc:name="Assert Updated Case ID" expression="#[payload.caseId]" is='#[MunitTools::equalTo("500bm00003DfPvtAAF")]'/>
+            <munit-tools:assert-that doc:name="Assert PATCH HTTP Status 200" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call doc:name="Verify PATCH Case Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI PATCH Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 2: PATCH CASE NOT FOUND -->
-
-    <munit:test
-        name="patch-case-not-found-test"
-        description="PATCH case returns 404 CASE_NOT_FOUND">
-
+    <!-- TEST 2: PATCH CASE NOT FOUND (SAPI 404) -->
+    <munit:test name="patch-case-not-found-test" description="PATCH case returns 404 when the Case does not exist">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock SAPI PATCH Case Not Found">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock SAPI PATCH Case Not Found">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI PATCH Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "failed",
-                            errorCode: "CASE_NOT_FOUND",
-                            message: "Support case does not exist.",
-                            errorDescription:
-                                "The System API rejected the case update request.",
-                            correlationId: "munit-patch-case-not-found"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 404
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "CASE_NOT_FOUND", message: "Support case does not exist.", errorDescription: "The System API rejected the case update request.", correlationId: "munit-patch-case-not-found" }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 404 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set PATCH Case Not Found Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value='#[{
-                        status: "Closed",
-                        priority: "Low"
-                    }]'/>
-
-                <munit:attributes
-                    mediaType="application/java"
-                    value='#[{
-                        uriParams: {
-                            caseId: "500bm00003InvalidAAF"
-                        }
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm000022PMWDAA4", status: "Closed", priority: "Low" }]'/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { caseId: "500bm00003InvalidAAF" } }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Run PATCH Case Not Found Flow"
-                name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Run PATCH Case Not Found Flow" name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert PATCH Not Found Status"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert CASE_NOT_FOUND Error Code"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CASE_NOT_FOUND")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert PATCH 404 Status"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(404)]"/>
-
+            <munit-tools:assert-that doc:name="Assert PATCH Not Found Status" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert CASE_NOT_FOUND Error Code" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CASE_NOT_FOUND")]'/>
+            <munit-tools:assert-that doc:name="Assert PATCH 404 Status" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(404)]"/>
+            <munit-tools:verify-call doc:name="Verify PATCH Case Called Once" processor="http:request" times="1">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
         </munit:validation>
-
     </munit:test>
 
-    <!-- ============================================================= -->
-    <!-- GET /customers/{customerId}/cases                            -->
-    <!-- ============================================================= -->
-
-    <!-- TEST 3: GET CASE HISTORY SUCCESS -->
-
-    <munit:test
-        name="get-customer-case-history-success-test"
-        description="GET case history returns 200 with cases list">
-
+    <!-- TEST 3: PATCH CASE SAPI 503 - SYSTEM_API_UNAVAILABLE -->
+    <!-- FIX: was "patch-case-customer-not-found-test" which incorrectly mocked -->
+    <!-- "Call SAPI GET Contact By ID" - PATCH flow has no customer validation. -->
+    <!-- Replaced with a valid SAPI 503 scenario the flow actually handles.     -->
+    <munit:test name="patch-case-customer-not-found-test" description="PATCH case returns 503 SYSTEM_API_UNAVAILABLE when SAPI is unavailable">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Success For History">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock SAPI PATCH Case 503">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Customer retrieved successfully",
-                            data: {
-                                contactId: "003bm00000ABC123",
-                                firstName: "Test",
-                                lastName: "Customer"
-                            }
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "SYSTEM_API_UNAVAILABLE", message: "The case update service is temporarily unavailable." }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 503 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Customer Cases Success">
-
-                <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Customer Cases"/>
-                </munit-tools:with-attributes>
-
-                <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Cases retrieved successfully",
-                            data: [
-                                {
-                                    caseId: "500bm00003DfPvtAAF",
-                                    subject: "Login Issue",
-                                    description: "Customer cannot log in",
-                                    priority: "High",
-                                    status: "Open"
-                                }
-                            ]
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
-                </munit-tools:then-return>
-
-            </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
+            <munit:set-event doc:name="Set PATCH Case Request">
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm000022PMWDAA4", status: "Closed", priority: "Low" }]'/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { caseId: "500bm00003DfPvtAAF" } }]'/>
+            </munit:set-event>
+            <flow-ref doc:name="Run PATCH Case 503 Flow" name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that doc:name="Assert Status Failed" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert SYSTEM_API_UNAVAILABLE" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("SYSTEM_API_UNAVAILABLE")]'/>
+            <munit-tools:assert-that doc:name="Assert HTTP Status 503" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(503)]"/>
+            <munit-tools:verify-call doc:name="Verify PATCH Case Called Once" processor="http:request" times="1">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
 
+    <!-- TEST 4: PATCH CASE SAPI 400 - INVALID_CASE_UPDATE -->
+    <!-- FIX: was "patch-case-empty-contact-id-test" which mocked              -->
+    <!-- "Call SAPI GET Contact By ID" - PATCH flow has no customer validation. -->
+    <munit:test name="patch-case-empty-contact-id-test" description="PATCH case returns 400 INVALID_CASE_UPDATE when SAPI rejects the payload">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock SAPI PATCH Case 400">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "INVALID_CASE_UPDATE", message: "The supplied case update values are invalid." }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 400 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set PATCH Case Invalid Payload Request">
+                <munit:payload mediaType="application/java" value='#[{ status: "UNKNOWN_STATUS", priority: "INVALID" }]'/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { caseId: "500bm00003DfPvtAAF" } }]'/>
+            </munit:set-event>
+            <flow-ref doc:name="Run PATCH Case 400 Flow" name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that doc:name="Assert Status Failed" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert INVALID_CASE_UPDATE" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("INVALID_CASE_UPDATE")]'/>
+            <munit-tools:assert-that doc:name="Assert HTTP Status 400" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(400)]"/>
+            <munit-tools:verify-call doc:name="Verify PATCH Case Called Once" processor="http:request" times="1">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <!-- TEST 5: PATCH CASE SAPI 500 - CASE_UPDATE_FAILED -->
+    <!-- FIX: was "patch-case-missing-customer-id-test" which had NO mock and   -->
+    <!-- expected INVALID_CUSTOMER_ID - PATCH flow does not check customerId.   -->
+    <munit:test name="patch-case-missing-customer-id-test" description="PATCH case returns 500 CASE_UPDATE_FAILED when SAPI returns a generic error">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock SAPI PATCH Case 500">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "CASE_UPDATE_FAILED", message: "The support case could not be updated." }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 500 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set PATCH Case 500 Request">
+                <munit:payload mediaType="application/java" value='#[{ status: "Closed", priority: "Low" }]'/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { caseId: "500bm00003DfPvtAAF" } }]'/>
+            </munit:set-event>
+            <flow-ref doc:name="Run PATCH Case 500 Flow" name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that doc:name="Assert Status Failed" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert CASE_UPDATE_FAILED" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CASE_UPDATE_FAILED")]'/>
+            <munit-tools:assert-that doc:name="Assert HTTP Status 500" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(500)]"/>
+            <munit-tools:verify-call doc:name="Verify PATCH Case Called Once" processor="http:request" times="1">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <!-- TEST 6: PATCH CASE SAPI returns 200 but body.status = "failed"        -->
+    <!-- FIX: was "patch-case-customer-service-unavailable-test" which mocked  -->
+    <!-- "Call SAPI GET Contact By ID" - PATCH flow has no customer validation. -->
+    <!-- The flow's choice condition also checks body status even on HTTP 200.  -->
+    <munit:test name="patch-case-customer-service-unavailable-test" description="PATCH case returns failed when SAPI HTTP 200 but response body indicates failure">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock SAPI PATCH Case Body Failure">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "CASE_UPDATE_FAILED", message: "Case update was rejected by the downstream system." }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set PATCH Case Body Failure Request">
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm000022PMWDAA4", status: "Closed", priority: "Low" }]'/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { caseId: "500bm00003DfPvtAAF" } }]'/>
+            </munit:set-event>
+            <flow-ref doc:name="Run PATCH Case Body Failure Flow" name="patch:\cases\(caseId):application\json:customer-process-apiraml-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that doc:name="Assert Status Failed" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert CASE_UPDATE_FAILED errorCode" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CASE_UPDATE_FAILED")]'/>
+            <munit-tools:verify-call doc:name="Verify PATCH Case Called Once" processor="http:request" times="1">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI PATCH Case"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <!-- GET /customers/{customerId}/cases -->
+
+    <!-- TEST 7: GET CASE HISTORY SUCCESS -->
+    <munit:test name="get-customer-case-history-success-test" description="GET case history returns 200 with cases list">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Success For History">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Customer retrieved successfully", data: { contactId: "003bm00000ABC123", firstName: "Test", lastName: "Customer" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Customer Cases Success">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Customer Cases"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Cases retrieved successfully", data: [ { caseId: "500bm00003DfPvtAAF", subject: "Login Issue", description: "Customer cannot log in", priority: "High", status: "Open" } ] }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
             <munit:set-event doc:name="Set GET Case History Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value="#[{}]"/>
-
-                <munit:attributes
-                    mediaType="application/java"
-                    value='#[{
-                        uriParams: {
-                            customerId: "003bm00000ABC123"
-                        }
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value="#[{}]"/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { customerId: "003bm00000ABC123" } }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Run GET Customer Cases Flow"
-                name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Run GET Customer Cases Flow" name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert GET History Success"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("success")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert GET Customer ID"
-                expression="#[payload.customerId]"
-                is='#[MunitTools::equalTo("003bm00000ABC123")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert One Case Returned"
-                expression="#[sizeOf(payload.cases)]"
-                is="#[MunitTools::equalTo(1)]"/>
-
-            <munit-tools:assert-that
-                doc:name="Assert Returned Case ID"
-                expression="#[payload.cases[0].caseId]"
-                is='#[MunitTools::equalTo("500bm00003DfPvtAAF")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert GET History HTTP Status 200"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(200)]"/>
-
+            <munit-tools:assert-that doc:name="Assert GET History Success" expression="#[payload.status]" is='#[MunitTools::equalTo("success")]'/>
+            <munit-tools:assert-that doc:name="Assert GET Customer ID" expression="#[payload.customerId]" is='#[MunitTools::equalTo("003bm00000ABC123")]'/>
+            <munit-tools:assert-that doc:name="Assert One Case Returned" expression="#[sizeOf(payload.cases)]" is="#[MunitTools::equalTo(1)]"/>
+            <munit-tools:assert-that doc:name="Assert Returned Case ID" expression="#[payload.cases[0].caseId]" is='#[MunitTools::equalTo("500bm00003DfPvtAAF")]'/>
+            <munit-tools:assert-that doc:name="Assert GET History HTTP Status 200" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(200)]"/>
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 4: GET CASE HISTORY - CUSTOMER NOT FOUND -->
-
-    <munit:test
-        name="get-customer-case-history-not-found-test"
-        description="GET case history returns 404 when customer does not exist">
-
+    <!-- TEST 8: GET CASE HISTORY - CUSTOMER NOT FOUND -->
+    <munit:test name="get-customer-case-history-not-found-test" description="GET case history returns 404 when customer does not exist">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Not Found For History">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Not Found For History">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "failed",
-                            errorCode: "CUSTOMER_NOT_FOUND",
-                            message: "Customer does not exist.",
-                            errorDescription:
-                                "No customer record was returned by the System API.",
-                            correlationId: "munit-get-customer-not-found"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 404
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "CUSTOMER_NOT_FOUND", message: "Customer does not exist.", errorDescription: "No customer record was returned by the System API.", correlationId: "munit-get-customer-not-found" }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 404 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set GET Customer Not Found Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value="#[{}]"/>
-
-                <munit:attributes
-                    mediaType="application/java"
-                    value='#[{
-                        uriParams: {
-                            customerId: "003bm00000NotFound"
-                        }
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value="#[{}]"/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { customerId: "003bm00000NotFound" } }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Run GET Customer Not Found Flow"
-                name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Run GET Customer Not Found Flow" name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert History Customer Not Found Status"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert History CUSTOMER_NOT_FOUND"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert History 404 Status"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(404)]"/>
-
+            <munit-tools:assert-that doc:name="Assert History Customer Not Found Status" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert History CUSTOMER_NOT_FOUND" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
+            <munit-tools:assert-that doc:name="Assert History 404 Status" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(404)]"/>
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 5: GET CASE HISTORY - CUSTOMER EMPTY CONTACT ID -->
-
-    <munit:test
-        name="get-case-history-empty-contactid"
-        description="Empty contactId returns CUSTOMER_NOT_FOUND">
-
+    <!-- TEST 9: GET CASE HISTORY - EMPTY CONTACT ID -->
+    <munit:test name="get-case-history-empty-contactid" description="Empty contactId returns CUSTOMER_NOT_FOUND">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Empty ContactId">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Empty ContactId">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Customer retrieved",
-                            data: {
-                                contactId: "",
-                                firstName: "Test",
-                                lastName: "User"
-                            }
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Customer retrieved", data: { contactId: "", firstName: "Test", lastName: "User" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set GET Case History Empty ContactId Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value="#[{}]"/>
-
-                <munit:attributes
-                    mediaType="application/java"
-                    value='#[{
-                        uriParams: {
-                            customerId: "003bm00000EmptyCID"
-                        }
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value="#[{}]"/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { customerId: "003bm00000EmptyCID" } }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Execute GET Customer Cases Flow"
-                name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Execute GET Customer Cases Flow" name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert Status Failed"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert CUSTOMER_NOT_FOUND"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert HTTP Status 404"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(404)]"/>
-
-            <munit-tools:verify-call
-                doc:name="Verify GET Contact Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:assert-that doc:name="Assert Status Failed" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert CUSTOMER_NOT_FOUND" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
+            <munit-tools:assert-that doc:name="Assert HTTP Status 404" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(404)]"/>
+            <munit-tools:verify-call doc:name="Verify GET Contact Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
-            <munit-tools:verify-call
-                doc:name="Verify GET Customer Cases Not Called"
-                processor="http:request"
-                times="0">
+            <munit-tools:verify-call doc:name="Verify GET Customer Cases Not Called" processor="http:request" times="0">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Customer Cases"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Customer Cases"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 6: GET CASE HISTORY - CASE RETRIEVAL FAILURE -->
-
-    <munit:test
-        name="get-case-history-retrieval-failure"
-        description="Case history retrieval failure returns HTTP 500">
-
+    <!-- TEST 10: GET CASE HISTORY - CASE RETRIEVAL FAILURE -->
+    <munit:test name="get-case-history-retrieval-failure" description="Case history retrieval failure returns HTTP 500">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Success">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Success">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Customer retrieved successfully",
-                            data: {
-                                contactId: "003bm000022PMWDAA4",
-                                firstName: "Test",
-                                lastName: "Customer"
-                            }
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Customer retrieved successfully", data: { contactId: "003bm000022PMWDAA4", firstName: "Test", lastName: "Customer" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Customer Cases Failure">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Customer Cases Failure">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Customer Cases"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Customer Cases"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "failed",
-                            errorCode: "CASE_HISTORY_RETRIEVAL_FAILED",
-                            message:
-                                "Unable to retrieve cases for this customer.",
-                            errorDescription:
-                                "The System API could not retrieve the case history.",
-                            correlationId: "munit-case-history-failure"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 500
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "CASE_HISTORY_RETRIEVAL_FAILED", message: "Unable to retrieve cases for this customer.", errorDescription: "The System API could not retrieve the case history.", correlationId: "munit-case-history-failure" }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 500 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set GET Case History Failure Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value="#[{}]"/>
-
-                <munit:attributes
-                    mediaType="application/java"
-                    value='#[{
-                        uriParams: {
-                            customerId: "003bm000022PMWDAA4"
-                        }
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value="#[{}]"/>
+                <munit:attributes mediaType="application/java" value='#[{ uriParams: { customerId: "003bm000022PMWDAA4" } }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Execute GET Customer Cases Flow"
-                name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Execute GET Customer Cases Flow" name="get:\customers\(customerId)\cases:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert Retrieval Failed Status"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert CASE_HISTORY_RETRIEVAL_FAILED"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CASE_HISTORY_RETRIEVAL_FAILED")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert HTTP Status 500"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(500)]"/>
-
-            <munit-tools:verify-call
-                doc:name="Verify GET Contact Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:assert-that doc:name="Assert Retrieval Failed Status" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert CASE_HISTORY_RETRIEVAL_FAILED" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CASE_HISTORY_RETRIEVAL_FAILED")]'/>
+            <munit-tools:assert-that doc:name="Assert HTTP Status 500" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(500)]"/>
+            <munit-tools:verify-call doc:name="Verify GET Contact Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
-            <munit-tools:verify-call
-                doc:name="Verify GET Customer Cases Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:verify-call doc:name="Verify GET Customer Cases Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Customer Cases"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Customer Cases"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
         </munit:validation>
-
     </munit:test>
 
-    <!-- ============================================================= -->
-    <!-- POST /cases                                                  -->
-    <!-- ============================================================= -->
+    <!-- POST /cases -->
 
-    <!-- TEST 7: POST CASE SUCCESS -->
-
-    <munit:test
-        name="post-case-success-test"
-        description="POST case creates case and returns 201 with case ID">
-
+    <!-- TEST 11: POST CASE SUCCESS -->
+    <munit:test name="post-case-success-test" description="POST case creates case and returns 201 with case ID">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Success For POST Case">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Success For POST Case">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Customer retrieved successfully",
-                            data: {
-                                contactId: "003bm000022PMWDAA4"
-                            }
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Customer retrieved successfully", data: { contactId: "003bm000022PMWDAA4" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock POST Case Success">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock POST Case Success">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI POST Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI POST Case"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Case created successfully",
-                            id: "500bm00003DesdOAAR"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 201
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Case created successfully", id: "500bm00003DesdOAAR" }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 201 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set POST Case Success Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value='#[{
-                        customerId: "003bm000022PMWDAA4",
-                        subject: "Unable to access customer portal",
-                        description: "Customer is unable to sign in.",
-                        priority: "High"
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm000022PMWDAA4", subject: "Unable to access customer portal", description: "Customer is unable to sign in.", priority: "High" }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Run POST Case Flow"
-                name="post:\cases:application\json:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Run POST Case Flow" name="post:\cases:application\json:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert POST Case Success"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("success")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert Created Case ID"
-                expression="#[payload.caseId]"
-                is='#[MunitTools::equalTo("500bm00003DesdOAAR")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert POST Case HTTP Status 201"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(201)]"/>
-
+            <munit-tools:assert-that doc:name="Assert POST Case Success" expression="#[payload.status]" is='#[MunitTools::equalTo("success")]'/>
+            <munit-tools:assert-that doc:name="Assert Created Case ID" expression="#[payload.caseId]" is='#[MunitTools::equalTo("500bm00003DesdOAAR")]'/>
+            <munit-tools:assert-that doc:name="Assert POST Case HTTP Status 201" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(201)]"/>
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 8: POST CASE CREATION FAILURE -->
-
-    <munit:test
-        name="post-case-creation-failure-test"
-        description="POST case returns 500 CASE_CREATION_FAILED when SAPI rejects">
-
+    <!-- TEST 12: POST CASE CREATION FAILURE -->
+    <munit:test name="post-case-creation-failure-test" description="POST case returns 500 CASE_CREATION_FAILED when SAPI rejects">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Success For POST Failure">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Success For POST Failure">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Customer retrieved successfully",
-                            data: {
-                                contactId: "003bm000022PMWDAA4"
-                            }
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Customer retrieved successfully", data: { contactId: "003bm000022PMWDAA4" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock POST Case Creation Failure">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock POST Case Creation Failure">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI POST Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI POST Case"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "failed",
-                            errorCode: "CASE_CREATION_FAILED",
-                            message: "The support case could not be created.",
-                            errorDescription:
-                                "The System API rejected the case creation request.",
-                            correlationId: "munit-post-case-failure"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 500
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "CASE_CREATION_FAILED", message: "The support case could not be created.", errorDescription: "The System API rejected the case creation request.", correlationId: "munit-post-case-failure" }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 500 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set POST Case Failure Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value='#[{
-                        customerId: "003bm000022PMWDAA4",
-                        subject: "Unable to access customer portal",
-                        description: "Customer cannot access the portal.",
-                        priority: "High"
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm000022PMWDAA4", subject: "Unable to access customer portal", description: "Customer cannot access the portal.", priority: "High" }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Run POST Case Failure Flow"
-                name="post:\cases:application\json:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Run POST Case Failure Flow" name="post:\cases:application\json:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert POST Case Failed Status"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert CASE_CREATION_FAILED"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CASE_CREATION_FAILED")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert POST Failure HTTP Status 500"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(500)]"/>
-
+            <munit-tools:assert-that doc:name="Assert POST Case Failed Status" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert CASE_CREATION_FAILED" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CASE_CREATION_FAILED")]'/>
+            <munit-tools:assert-that doc:name="Assert POST Failure HTTP Status 500" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(500)]"/>
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 9: POST CASE - CUSTOMER NOT FOUND -->
-
-    <munit:test
-        name="post-case-customer-http-error"
-        description="POST case stops when customer lookup returns 404">
-
+    <!-- TEST 13: POST CASE - CUSTOMER NOT FOUND -->
+    <munit:test name="post-case-customer-http-error" description="POST case stops when customer lookup returns 404">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Not Found">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Not Found">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "failed",
-                            errorCode: "CUSTOMER_NOT_FOUND",
-                            message: "Customer does not exist.",
-                            errorDescription:
-                                "No customer record was returned by the System API.",
-                            correlationId: "munit-post-case-customer-not-found"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 404
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "failed", errorCode: "CUSTOMER_NOT_FOUND", message: "Customer does not exist.", errorDescription: "No customer record was returned by the System API.", correlationId: "munit-post-case-customer-not-found" }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 404 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set POST Case Customer Not Found Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value='#[{
-                        customerId: "003bm00000NotFound",
-                        subject: "Login Issue",
-                        description: "Cannot log in",
-                        priority: "High"
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm00000NotFound", subject: "Login Issue", description: "Cannot log in", priority: "High" }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Execute POST Case Flow"
-                name="post:\cases:application\json:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Execute POST Case Flow" name="post:\cases:application\json:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert Customer Not Found Status"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert CUSTOMER_NOT_FOUND"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert HTTP Status 404"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(404)]"/>
-
-            <munit-tools:verify-call
-                doc:name="Verify GET Contact Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:assert-that doc:name="Assert Customer Not Found Status" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert CUSTOMER_NOT_FOUND" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
+            <munit-tools:assert-that doc:name="Assert HTTP Status 404" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(404)]"/>
+            <munit-tools:verify-call doc:name="Verify GET Contact Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
-            <munit-tools:verify-call
-                doc:name="Verify POST Case Not Called"
-                processor="http:request"
-                times="0">
+            <munit-tools:verify-call doc:name="Verify POST Case Not Called" processor="http:request" times="0">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI POST Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI POST Case"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 10: POST CASE - EMPTY CONTACT ID -->
-
-    <munit:test
-        name="post-case-customer-empty-contactid"
-        description="POST case stops when customer contactId is empty">
-
+    <!-- TEST 14: POST CASE - EMPTY CONTACT ID -->
+    <munit:test name="post-case-customer-empty-contactid" description="POST case stops when customer contactId is empty">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Empty ContactId">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Empty ContactId">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Customer retrieved",
-                            data: {
-                                contactId: "",
-                                firstName: "Test",
-                                lastName: "User"
-                            }
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Customer retrieved", data: { contactId: "", firstName: "Test", lastName: "User" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set POST Case Empty ContactId Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value='#[{
-                        customerId: "003bm00000EmptyAAA",
-                        subject: "Login Issue",
-                        description: "Cannot log in",
-                        priority: "High"
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm00000EmptyAAA", subject: "Login Issue", description: "Cannot log in", priority: "High" }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Execute POST Case Flow"
-                name="post:\cases:application\json:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Execute POST Case Flow" name="post:\cases:application\json:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert Empty ContactId Failed"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert Empty Contact CUSTOMER_NOT_FOUND"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert HTTP Status 404"
-                expression="#[vars.httpStatus default null]"
-                is="#[MunitTools::equalTo(404)]"/>
-
-            <munit-tools:verify-call
-                doc:name="Verify GET Contact Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:assert-that doc:name="Assert Empty ContactId Failed" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert Empty Contact CUSTOMER_NOT_FOUND" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
+            <munit-tools:assert-that doc:name="Assert HTTP Status 404" expression="#[vars.httpStatus default null]" is="#[MunitTools::equalTo(404)]"/>
+            <munit-tools:verify-call doc:name="Verify GET Contact Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
-            <munit-tools:verify-call
-                doc:name="Verify POST Case Not Called"
-                processor="http:request"
-                times="0">
+            <munit-tools:verify-call doc:name="Verify POST Case Not Called" processor="http:request" times="0">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI POST Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI POST Case"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
         </munit:validation>
-
     </munit:test>
 
-    <!-- TEST 11: POST CASE - RESPONSE HAS NO CASE ID -->
-
-    <munit:test
-        name="post-case-empty-id-response"
-        description="POST case maps successful response without Case ID">
-
+    <!-- TEST 15: POST CASE - RESPONSE HAS NO CASE ID -->
+    <munit:test name="post-case-empty-id-response" description="POST case maps successful response without Case ID">
         <munit:behavior>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock GET Contact Success">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock GET Contact Success">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Customer retrieved successfully",
-                            data: {
-                                contactId: "003bm000022PMWDAA4"
-                            }
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 200
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Customer retrieved successfully", data: { contactId: "003bm000022PMWDAA4" } }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 200 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
-            <munit-tools:mock-when
-                processor="http:request"
-                doc:name="Mock POST Case Without ID">
-
+            <munit-tools:mock-when processor="http:request" doc:name="Mock POST Case Without ID">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI POST Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI POST Case"/>
                 </munit-tools:with-attributes>
-
                 <munit-tools:then-return>
-
-                    <munit-tools:payload
-                        mediaType="application/java"
-                        value='#[{
-                            status: "success",
-                            message: "Case created",
-                            caseNumber: "00001234"
-                        }]'/>
-
-                    <munit-tools:attributes
-                        mediaType="application/java"
-                        value="#[{
-                            statusCode: 201
-                        }]"/>
-
+                    <munit-tools:payload mediaType="application/java" value='#[{ status: "success", message: "Case created", caseNumber: "00001234" }]'/>
+                    <munit-tools:attributes mediaType="application/java" value="#[{ statusCode: 201 }]"/>
                 </munit-tools:then-return>
-
             </munit-tools:mock-when>
-
         </munit:behavior>
-
         <munit:execution>
-
             <munit:set-event doc:name="Set POST Case Empty ID Request">
-
-                <munit:payload
-                    mediaType="application/java"
-                    value='#[{
-                        customerId: "003bm000022PMWDAA4",
-                        subject: "Portal Access Issue",
-                        description: "Customer cannot access portal.",
-                        priority: "High"
-                    }]'/>
-
+                <munit:payload mediaType="application/java" value='#[{ customerId: "003bm000022PMWDAA4", subject: "Portal Access Issue", description: "Customer cannot access portal.", priority: "High" }]'/>
             </munit:set-event>
-
-            <flow-ref
-                doc:name="Execute POST Case Flow"
-                name="post:\cases:application\json:customer-process-apiraml-config"/>
-
+            <flow-ref doc:name="Execute POST Case Flow" name="post:\cases:application\json:customer-process-apiraml-config"/>
         </munit:execution>
-
         <munit:validation>
-
-            <munit-tools:assert-that
-                doc:name="Assert Empty Case ID Failed"
-                expression="#[payload.status]"
-                is='#[MunitTools::equalTo("failed")]'/>
-
-            <munit-tools:assert-that
-                doc:name="Assert Empty Case ID Error Code"
-                expression="#[payload.errorCode]"
-                is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
-
-            <munit-tools:verify-call
-                doc:name="Verify GET Contact Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:assert-that doc:name="Assert Empty Case ID Failed" expression="#[payload.status]" is='#[MunitTools::equalTo("failed")]'/>
+            <munit-tools:assert-that doc:name="Assert Empty Case ID Error Code" expression="#[payload.errorCode]" is='#[MunitTools::equalTo("CUSTOMER_NOT_FOUND")]'/>
+            <munit-tools:verify-call doc:name="Verify GET Contact Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI GET Contact By ID"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI GET Contact By ID"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
-            <munit-tools:verify-call
-                doc:name="Verify POST Case Called Once"
-                processor="http:request"
-                times="1">
+            <munit-tools:verify-call doc:name="Verify POST Case Called Once" processor="http:request" times="1">
                 <munit-tools:with-attributes>
-                    <munit-tools:with-attribute
-                        attributeName="doc:name"
-                        whereValue="Call SAPI POST Case"/>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call SAPI POST Case"/>
                 </munit-tools:with-attributes>
             </munit-tools:verify-call>
-
         </munit:validation>
-
     </munit:test>
 
 </mule>

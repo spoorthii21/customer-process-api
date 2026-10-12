@@ -188,6 +188,7 @@ jobs:
           servers = ET.SubElement(root, f"{{{namespace}}}servers")
 
           server = ET.SubElement(servers, f"{{{namespace}}}server")
+
           ET.SubElement(
               server,
               f"{{{namespace}}}id"
@@ -519,6 +520,115 @@ jobs:
           echo "Target: $CLOUDHUB_TARGET"
           echo "API instance ID: $PAPI_API_ID"
 
+      # This step fixes:
+      # 409 Conflict: Application properties cannot contain newline characters.
+      - name: Sanitize CloudHub deployment values
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        env:
+          RAW_ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
+          RAW_ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
+          RAW_CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
+          RAW_PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          RAW_PAPI_API_ID: ${{ vars.PAPI_API_ID }}
+          RAW_CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          RAW_CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+          RAW_ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
+          RAW_ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
+          RAW_MULE_KEY: ${{ secrets.MULE_KEY }}
+        run: |
+          set -euo pipefail
+
+          sanitize_value() {
+            printf '%s' "$1" | tr -d '\r\n'
+          }
+
+          ANYPOINT_ORG_ID_CLEAN="$(sanitize_value "$RAW_ANYPOINT_ORG_ID")"
+          ANYPOINT_ENVIRONMENT_CLEAN="$(sanitize_value "$RAW_ANYPOINT_ENVIRONMENT")"
+          CLOUDHUB_TARGET_CLEAN="$(sanitize_value "$RAW_CLOUDHUB_TARGET")"
+          PAPI_APPLICATION_NAME_CLEAN="$(sanitize_value "$RAW_PAPI_APPLICATION_NAME")"
+          PAPI_API_ID_CLEAN="$(sanitize_value "$RAW_PAPI_API_ID")"
+          CONNECTED_APP_CLIENT_ID_CLEAN="$(sanitize_value "$RAW_CONNECTED_APP_CLIENT_ID")"
+          CONNECTED_APP_CLIENT_SECRET_CLEAN="$(sanitize_value "$RAW_CONNECTED_APP_CLIENT_SECRET")"
+          ANYPOINT_PLATFORM_CLIENT_ID_CLEAN="$(sanitize_value "$RAW_ANYPOINT_PLATFORM_CLIENT_ID")"
+          ANYPOINT_PLATFORM_CLIENT_SECRET_CLEAN="$(sanitize_value "$RAW_ANYPOINT_PLATFORM_CLIENT_SECRET")"
+          MULE_KEY_CLEAN="$(sanitize_value "$RAW_MULE_KEY")"
+
+          {
+            printf 'ANYPOINT_ORG_ID=%s\n' "$ANYPOINT_ORG_ID_CLEAN"
+            printf 'ANYPOINT_ENVIRONMENT=%s\n' "$ANYPOINT_ENVIRONMENT_CLEAN"
+            printf 'CLOUDHUB_TARGET=%s\n' "$CLOUDHUB_TARGET_CLEAN"
+            printf 'PAPI_APPLICATION_NAME=%s\n' "$PAPI_APPLICATION_NAME_CLEAN"
+            printf 'PAPI_API_ID=%s\n' "$PAPI_API_ID_CLEAN"
+            printf 'CONNECTED_APP_CLIENT_ID=%s\n' "$CONNECTED_APP_CLIENT_ID_CLEAN"
+            printf 'CONNECTED_APP_CLIENT_SECRET=%s\n' "$CONNECTED_APP_CLIENT_SECRET_CLEAN"
+            printf 'ANYPOINT_PLATFORM_CLIENT_ID=%s\n' "$ANYPOINT_PLATFORM_CLIENT_ID_CLEAN"
+            printf 'ANYPOINT_PLATFORM_CLIENT_SECRET=%s\n' "$ANYPOINT_PLATFORM_CLIENT_SECRET_CLEAN"
+            printf 'MULE_KEY=%s\n' "$MULE_KEY_CLEAN"
+          } >> "$GITHUB_ENV"
+
+          echo "::add-mask::$CONNECTED_APP_CLIENT_SECRET_CLEAN"
+          echo "::add-mask::$ANYPOINT_PLATFORM_CLIENT_ID_CLEAN"
+          echo "::add-mask::$ANYPOINT_PLATFORM_CLIENT_SECRET_CLEAN"
+          echo "::add-mask::$MULE_KEY_CLEAN"
+
+          echo "CloudHub deployment values sanitized successfully."
+
+      - name: Validate sanitized CloudHub values
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REQUIRED_VALUES=(
+            ANYPOINT_ORG_ID
+            ANYPOINT_ENVIRONMENT
+            CLOUDHUB_TARGET
+            PAPI_APPLICATION_NAME
+            PAPI_API_ID
+            CONNECTED_APP_CLIENT_ID
+            CONNECTED_APP_CLIENT_SECRET
+            ANYPOINT_PLATFORM_CLIENT_ID
+            ANYPOINT_PLATFORM_CLIENT_SECRET
+            MULE_KEY
+          )
+
+          for NAME in "${REQUIRED_VALUES[@]}"; do
+            VALUE="${!NAME:-}"
+
+            if [ -z "$VALUE" ]; then
+              echo "::error::$NAME became empty after sanitization"
+              exit 1
+            fi
+
+            if [[ "$VALUE" == *$'\n'* ]] || [[ "$VALUE" == *$'\r'* ]]; then
+              echo "::error::$NAME still contains a newline character"
+              exit 1
+            fi
+          done
+
+          if ! [[ "$PAPI_API_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Sanitized PAPI_API_ID must contain only numbers"
+            exit 1
+          fi
+
+          if ! [[ "$PAPI_APPLICATION_NAME" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::Sanitized PAPI_APPLICATION_NAME is invalid"
+            exit 1
+          fi
+
+          echo "All sanitized CloudHub values are valid."
+
       - name: Publish PAPI application to Anypoint Exchange
         id: publish
         if: >-
@@ -528,17 +638,6 @@ jobs:
             inputs.deploy == true
           }}
         shell: bash
-        env:
-          ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
-          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
-          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
-          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
-          PAPI_API_ID: ${{ vars.PAPI_API_ID }}
-          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
-          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
-          ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
-          ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
-          MULE_KEY: ${{ secrets.MULE_KEY }}
         run: |
           set +e
 
@@ -594,17 +693,6 @@ jobs:
             inputs.deploy == true
           }}
         shell: bash
-        env:
-          ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
-          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
-          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
-          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
-          PAPI_API_ID: ${{ vars.PAPI_API_ID }}
-          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
-          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
-          ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
-          ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
-          MULE_KEY: ${{ secrets.MULE_KEY }}
         run: |
           set +e
 
@@ -630,14 +718,25 @@ jobs:
 
             if [ "$MAVEN_EXIT_CODE" -eq 0 ]; then
               FINAL_EXIT_CODE=0
+
               echo "CloudHub deployment completed successfully." \
                 | tee -a "$DEPLOY_LOG"
+
+              break
+            fi
+
+            if grep -q \
+              "Application properties cannot contain newline characters" \
+              "$DEPLOY_LOG"; then
+              echo "::error::CloudHub rejected an application property because it contains a newline."
+              echo "::error::Check the CloudHub properties section in pom.xml."
               break
             fi
 
             if [ "$ATTEMPT" -lt 3 ]; then
               echo "Deployment failed. Waiting 30 seconds before retry..." \
                 | tee -a "$DEPLOY_LOG"
+
               sleep 30
             fi
           done
@@ -651,7 +750,7 @@ jobs:
 
             grep \
               -nE \
-              "Caused by:|ERROR|Exception|Forbidden|Unauthorized|Bad Request|status code|Response code|provided GAV|no asset matching|not found|target|environment|Failed to deploy" \
+              "Caused by:|ERROR|Exception|Conflict|Forbidden|Unauthorized|Bad Request|status code|Response code|provided GAV|no asset matching|not found|target|environment|newline|Failed to deploy" \
               "$DEPLOY_LOG" \
               | tail -300 || true
           fi
@@ -674,9 +773,9 @@ jobs:
         shell: bash
         env:
           DEPLOY_REQUESTED: ${{ inputs.deploy || false }}
-          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
-          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
-          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
+          SUMMARY_PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          SUMMARY_ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
+          SUMMARY_CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
         run: |
           {
             echo "## Customer Process API CI/CD"
@@ -690,8 +789,8 @@ jobs:
             echo "- MUnit exit code: \`${{ steps.munit.outputs.maven_exit_code || 'not executed' }}\`"
             echo "- Exchange publication exit code: \`${{ steps.publish.outputs.publication_exit_code || 'not executed' }}\`"
             echo "- CloudHub deployment exit code: \`${{ steps.deploy.outputs.deployment_exit_code || 'not executed' }}\`"
-            echo "- Application: \`${PAPI_APPLICATION_NAME:-not configured}\`"
-            echo "- Environment: \`${ANYPOINT_ENVIRONMENT:-not configured}\`"
-            echo "- Target: \`${CLOUDHUB_TARGET:-not configured}\`"
+            echo "- Application: \`${SUMMARY_PAPI_APPLICATION_NAME:-not configured}\`"
+            echo "- Environment: \`${SUMMARY_ANYPOINT_ENVIRONMENT:-not configured}\`"
+            echo "- Target: \`${SUMMARY_CLOUDHUB_TARGET:-not configured}\`"
             echo "- Deployment requested: \`$DEPLOY_REQUESTED\`"
           } >> "$GITHUB_STEP_SUMMARY"

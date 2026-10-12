@@ -6,14 +6,16 @@ on:
       - main
       - develop
       - "feature/**"
+
   pull_request:
     branches:
       - main
       - develop
+
   workflow_dispatch:
     inputs:
       deploy:
-        description: Deploy PAPI to CloudHub 2.0
+        description: "Deploy PAPI to CloudHub 2.0"
         required: true
         type: boolean
         default: false
@@ -23,7 +25,7 @@ permissions:
 
 jobs:
   ci:
-    name: Build, Test, Package and Deploy PAPI
+    name: Build, Test, Publish and Deploy PAPI
     runs-on: ubuntu-latest
 
     env:
@@ -37,8 +39,8 @@ jobs:
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          java-version: "17"
           distribution: temurin
+          java-version: "17"
           cache: maven
 
       - name: Set up Maven 3.9.9
@@ -46,29 +48,38 @@ jobs:
         with:
           maven-version: "3.9.9"
 
-      - name: Display Java and Maven versions
+      - name: Verify Java and Maven versions
         shell: bash
         run: |
+          set -euo pipefail
+
           java -version
           mvn --version
+
           ACTUAL_MAVEN_VERSION="$(mvn --version | head -1)"
+
           if [[ "$ACTUAL_MAVEN_VERSION" != *"Apache Maven 3.9.9"* ]]; then
             echo "::error::Expected Maven 3.9.9 but found: $ACTUAL_MAVEN_VERSION"
             exit 1
           fi
 
-      - name: Validate required Anypoint build secrets
+      - name: Validate Anypoint build secrets
         shell: bash
         run: |
+          set -euo pipefail
+
           MISSING=0
-          if [ -z "$ANYPOINT_CLIENT_ID" ]; then
+
+          if [ -z "${ANYPOINT_CLIENT_ID:-}" ]; then
             echo "::error::ANYPOINT_CLIENT_ID repository secret is missing"
             MISSING=1
           fi
-          if [ -z "$ANYPOINT_CLIENT_SECRET" ]; then
+
+          if [ -z "${ANYPOINT_CLIENT_SECRET:-}" ]; then
             echo "::error::ANYPOINT_CLIENT_SECRET repository secret is missing"
             MISSING=1
           fi
+
           if [ "$MISSING" -ne 0 ]; then
             exit 1
           fi
@@ -76,24 +87,48 @@ jobs:
       - name: Verify Anypoint Connected App authentication
         shell: bash
         run: |
+          set -euo pipefail
+
           TOKEN_RESPONSE="$RUNNER_TEMP/anypoint-token-response.json"
-          HTTP_STATUS=$(curl \
-            --silent \
-            --show-error \
-            --output "$TOKEN_RESPONSE" \
-            --write-out "%{http_code}" \
-            --request POST \
-            "https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token" \
-            --header "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "client_id=${ANYPOINT_CLIENT_ID}" \
-            --data-urlencode "client_secret=${ANYPOINT_CLIENT_SECRET}" \
-            --data-urlencode "grant_type=client_credentials")
+
+          HTTP_STATUS="$(
+            curl \
+              --silent \
+              --show-error \
+              --output "$TOKEN_RESPONSE" \
+              --write-out "%{http_code}" \
+              --request POST \
+              "https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token" \
+              --header "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "client_id=${ANYPOINT_CLIENT_ID}" \
+              --data-urlencode "client_secret=${ANYPOINT_CLIENT_SECRET}" \
+              --data-urlencode "grant_type=client_credentials"
+          )"
 
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "::error::Connected App authentication failed. HTTP status: $HTTP_STATUS"
+
             if [ -f "$TOKEN_RESPONSE" ]; then
-              python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("error_description", d.get("error", "Unknown authentication error")))' "$TOKEN_RESPONSE" || true
+              python3 - "$TOKEN_RESPONSE" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+
+          try:
+              with open(path, encoding="utf-8") as stream:
+                  response = json.load(stream)
+
+              message = response.get(
+                  "error_description",
+                  response.get("error", "Unknown authentication error")
+              )
+              print(message)
+          except Exception as exc:
+              print(f"Unable to parse authentication response: {exc}")
+          PY
             fi
+
             rm -f "$TOKEN_RESPONSE"
             exit 1
           fi
@@ -103,16 +138,22 @@ jobs:
           import os
           import sys
 
-          path = os.path.join(os.environ["RUNNER_TEMP"], "anypoint-token-response.json")
+          path = os.path.join(
+              os.environ["RUNNER_TEMP"],
+              "anypoint-token-response.json"
+          )
+
           with open(path, encoding="utf-8") as stream:
               response = json.load(stream)
 
           if response.get("token_type", "").lower() != "bearer":
               print("::error::Anypoint response did not contain a bearer token")
               sys.exit(1)
+
           if not response.get("access_token"):
               print("::error::Anypoint response did not contain an access token")
               sys.exit(1)
+
           print("Connected App authentication succeeded.")
           PY
 
@@ -121,45 +162,93 @@ jobs:
       - name: Configure Maven settings for Anypoint Exchange
         shell: bash
         run: |
+          set -euo pipefail
+
           mkdir -p "$HOME/.m2"
+
           python3 <<'PY'
           import os
           import xml.etree.ElementTree as ET
 
-          ns = "http://maven.apache.org/SETTINGS/1.0.0"
-          xsi = "http://www.w3.org/2001/XMLSchema-instance"
-          ET.register_namespace("", ns)
-          ET.register_namespace("xsi", xsi)
+          namespace = "http://maven.apache.org/SETTINGS/1.0.0"
+          xsi_namespace = "http://www.w3.org/2001/XMLSchema-instance"
+
+          ET.register_namespace("", namespace)
+          ET.register_namespace("xsi", xsi_namespace)
 
           root = ET.Element(
-              f"{{{ns}}}settings",
-              {f"{{{xsi}}}schemaLocation": f"{ns} https://maven.apache.org/xsd/settings-1.0.0.xsd"}
+              f"{{{namespace}}}settings",
+              {
+                  f"{{{xsi_namespace}}}schemaLocation":
+                      f"{namespace} "
+                      "https://maven.apache.org/xsd/settings-1.0.0.xsd"
+              }
           )
-          servers = ET.SubElement(root, f"{{{ns}}}servers")
-          server = ET.SubElement(servers, f"{{{ns}}}server")
-          ET.SubElement(server, f"{{{ns}}}id").text = "anypoint-exchange-v3"
-          ET.SubElement(server, f"{{{ns}}}username").text = "~~~Client~~~"
-          ET.SubElement(server, f"{{{ns}}}password").text = (
-              os.environ["ANYPOINT_CLIENT_ID"] + "~?~" + os.environ["ANYPOINT_CLIENT_SECRET"]
+
+          servers = ET.SubElement(root, f"{{{namespace}}}servers")
+
+          server = ET.SubElement(servers, f"{{{namespace}}}server")
+          ET.SubElement(
+              server,
+              f"{{{namespace}}}id"
+          ).text = "anypoint-exchange-v3"
+
+          ET.SubElement(
+              server,
+              f"{{{namespace}}}username"
+          ).text = "~~~Client~~~"
+
+          ET.SubElement(
+              server,
+              f"{{{namespace}}}password"
+          ).text = (
+              os.environ["ANYPOINT_CLIENT_ID"]
+              + "~?~"
+              + os.environ["ANYPOINT_CLIENT_SECRET"]
           )
 
           path = os.path.expanduser("~/.m2/settings.xml")
-          ET.ElementTree(root).write(path, encoding="UTF-8", xml_declaration=True)
+
+          ET.ElementTree(root).write(
+              path,
+              encoding="UTF-8",
+              xml_declaration=True
+          )
+
           ET.parse(path)
           print("Maven settings.xml created successfully.")
           PY
 
-      - name: Validate required PAPI project files
+      - name: Validate required project files
         shell: bash
         run: |
-          test -f pom.xml || { echo "::error::pom.xml was not found"; exit 1; }
-          test -f mule-artifact.json || { echo "::error::mule-artifact.json was not found"; exit 1; }
-          test -f src/main/mule/global.xml || { echo "::error::global.xml was not found"; exit 1; }
-          test -d src/test/munit || { echo "::error::src/test/munit was not found"; exit 1; }
+          set -euo pipefail
+
+          test -f pom.xml || {
+            echo "::error::pom.xml was not found"
+            exit 1
+          }
+
+          test -f mule-artifact.json || {
+            echo "::error::mule-artifact.json was not found"
+            exit 1
+          }
+
+          test -f src/main/mule/global.xml || {
+            echo "::error::src/main/mule/global.xml was not found"
+            exit 1
+          }
+
+          test -d src/test/munit || {
+            echo "::error::src/test/munit directory was not found"
+            exit 1
+          }
 
       - name: Validate PAPI Autodiscovery configuration
         shell: bash
         run: |
+          set -euo pipefail
+
           python3 <<'PY'
           import re
           import sys
@@ -167,6 +256,7 @@ jobs:
           from pathlib import Path
 
           path = Path("src/main/mule/global.xml")
+
           try:
               root = ET.parse(path).getroot()
           except ET.ParseError as exc:
@@ -174,8 +264,11 @@ jobs:
               sys.exit(1)
 
           autodiscovery = None
+
           for element in root.iter():
-              if element.tag.split("}")[-1].lower() in ("autodiscovery", "discovery"):
+              local_name = element.tag.split("}")[-1].lower()
+
+              if local_name in ("autodiscovery", "discovery"):
                   autodiscovery = element
                   break
 
@@ -187,10 +280,19 @@ jobs:
           flow_ref = (autodiscovery.get("flowRef") or "").strip()
 
           if not re.fullmatch(r"[0-9]+", api_id):
-              print("::error::Autodiscovery apiId must be a hardcoded numeric API Instance ID")
+              print(
+                  "::error::Autodiscovery apiId must be a hardcoded "
+                  "numeric API Instance ID"
+              )
               sys.exit(1)
-          if flow_ref != "customer-process-apiraml-main":
-              print(f"::error::Incorrect Autodiscovery flowRef: {flow_ref}")
+
+          expected_flow_ref = "customer-process-apiraml-main"
+
+          if flow_ref != expected_flow_ref:
+              print(
+                  f"::error::Incorrect Autodiscovery flowRef: {flow_ref}. "
+                  f"Expected: {expected_flow_ref}"
+              )
               sys.exit(1)
 
           print(f"Autodiscovery API ID: {api_id}")
@@ -200,18 +302,32 @@ jobs:
       - name: Clear incompatible cached Maven libraries
         shell: bash
         run: |
-          rm -rf "$HOME/.m2/repository/org/mule/tools/maven/mule-maven-plugin"
-          rm -rf "$HOME/.m2/repository/org/mule/tools/maven/mule-packager"
-          rm -rf "$HOME/.m2/repository/org/mule/tools/maven/mule-deployer"
-          rm -rf "$HOME/.m2/repository/org/mule/mule-maven-client-api"
-          rm -rf "$HOME/.m2/repository/org/mule/mule-maven-client-impl"
-          rm -rf "$HOME/.m2/repository/org/apache/maven/resolver"
+          set -euo pipefail
 
-      - name: Run MUnit tests and package Mule application
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/tools/maven/mule-maven-plugin"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/tools/maven/mule-packager"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/tools/maven/mule-deployer"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/mule-maven-client-api"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/mule/mule-maven-client-impl"
+
+          rm -rf \
+            "$HOME/.m2/repository/org/apache/maven/resolver"
+
+      - name: Run MUnit tests and package application
         id: munit
         shell: bash
         run: |
           set +e
+
           MUNIT_LOG="$RUNNER_TEMP/munit-console.log"
 
           mvn \
@@ -223,7 +339,12 @@ jobs:
             2>&1 | tee "$MUNIT_LOG"
 
           MAVEN_EXIT_CODE=${PIPESTATUS[0]}
+
           echo "maven_exit_code=$MAVEN_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          echo "============================================"
+          echo "MUnit and Maven execution summary"
+          echo "============================================"
 
           grep \
             -nE \
@@ -237,18 +358,27 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
+
           DIAGNOSTIC_DIR="$RUNNER_TEMP/munit-diagnostics"
           mkdir -p "$DIAGNOSTIC_DIR"
 
           if [ -f "$RUNNER_TEMP/munit-console.log" ]; then
-            cp "$RUNNER_TEMP/munit-console.log" "$DIAGNOSTIC_DIR/munit-console.log"
+            cp \
+              "$RUNNER_TEMP/munit-console.log" \
+              "$DIAGNOSTIC_DIR/munit-console.log"
           fi
 
           if [ -d target ]; then
             find target \
               -maxdepth 8 \
               -type f \
-              \( -name "*.xml" -o -name "*.html" -o -name "*.txt" -o -name "*.log" \) \
+              \( \
+                -name "*.xml" \
+                -o -name "*.html" \
+                -o -name "*.txt" \
+                -o -name "*.log" \
+              \) \
               -exec cp --parents "{}" "$DIAGNOSTIC_DIR/" \; \
               2>/dev/null || true
           fi
@@ -283,6 +413,8 @@ jobs:
         id: locate_jar
         shell: bash
         run: |
+          set -euo pipefail
+
           mapfile -t ARTIFACTS < <(
             find target \
               -maxdepth 1 \
@@ -295,13 +427,23 @@ jobs:
 
           if [ "${#ARTIFACTS[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one deployable Mule JAR, found ${#ARTIFACTS[@]}"
-            printf '%s\n' "${ARTIFACTS[@]}"
+
+            if [ "${#ARTIFACTS[@]}" -gt 0 ]; then
+              printf '%s\n' "${ARTIFACTS[@]}"
+            fi
+
             exit 1
           fi
 
           ARTIFACT_PATH="${ARTIFACTS[0]}"
-          test -s "$ARTIFACT_PATH" || { echo "::error::JAR is empty"; exit 1; }
+
+          test -s "$ARTIFACT_PATH" || {
+            echo "::error::Deployable Mule JAR is empty"
+            exit 1
+          }
+
           echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+
           ls -lh "$ARTIFACT_PATH"
 
       - name: Upload packaged Mule application
@@ -313,7 +455,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Validate CloudHub 2.0 deployment configuration
+      - name: Validate deployment configuration
         if: >-
           ${{
             github.event_name == 'workflow_dispatch' &&
@@ -333,6 +475,8 @@ jobs:
           ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
           MULE_KEY: ${{ secrets.MULE_KEY }}
         run: |
+          set -euo pipefail
+
           REQUIRED_VALUES=(
             ANYPOINT_ORG_ID
             ANYPOINT_ENVIRONMENT
@@ -347,21 +491,101 @@ jobs:
           )
 
           MISSING=0
+
           for NAME in "${REQUIRED_VALUES[@]}"; do
-            if [ -z "${!NAME}" ]; then
+            if [ -z "${!NAME:-}" ]; then
               echo "::error::$NAME is missing"
               MISSING=1
             fi
           done
+
           if [ "$MISSING" -ne 0 ]; then
             exit 1
           fi
+
           if ! [[ "$PAPI_API_ID" =~ ^[0-9]+$ ]]; then
             echo "::error::PAPI_API_ID must contain only numbers"
             exit 1
           fi
 
-      - name: Publish and deploy PAPI to CloudHub 2.0
+          if ! [[ "$PAPI_APPLICATION_NAME" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::PAPI_APPLICATION_NAME can contain only lowercase letters, numbers and hyphens"
+            exit 1
+          fi
+
+          echo "Deployment configuration validation completed successfully."
+          echo "Application: $PAPI_APPLICATION_NAME"
+          echo "Environment: $ANYPOINT_ENVIRONMENT"
+          echo "Target: $CLOUDHUB_TARGET"
+          echo "API instance ID: $PAPI_API_ID"
+
+      - name: Publish PAPI application to Anypoint Exchange
+        id: publish
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        env:
+          ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
+          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
+          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
+          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          PAPI_API_ID: ${{ vars.PAPI_API_ID }}
+          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+          ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
+          ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
+          MULE_KEY: ${{ secrets.MULE_KEY }}
+        run: |
+          set +e
+
+          PUBLISH_LOG="$RUNNER_TEMP/papi-exchange-publication.log"
+
+          mvn \
+            --batch-mode \
+            --no-transfer-progress \
+            --settings "$HOME/.m2/settings.xml" \
+            clean deploy \
+            -DskipMunitTests=true \
+            -e \
+            2>&1 | tee "$PUBLISH_LOG"
+
+          MAVEN_EXIT_CODE=${PIPESTATUS[0]}
+
+          echo "publication_exit_code=$MAVEN_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ "$MAVEN_EXIT_CODE" -ne 0 ]; then
+            echo "============================================"
+            echo "Exchange publication error summary"
+            echo "============================================"
+
+            grep \
+              -nE \
+              "Caused by:|ERROR|Exception|Forbidden|Unauthorized|Bad Request|status code|Response code|Artifact could not|already exists|Exchange publication failed" \
+              "$PUBLISH_LOG" \
+              | tail -300 || true
+          else
+            echo "PAPI application was published successfully."
+          fi
+
+          exit "$MAVEN_EXIT_CODE"
+
+      - name: Wait for Exchange asset propagation
+        if: >-
+          ${{
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main' &&
+            inputs.deploy == true
+          }}
+        shell: bash
+        run: |
+          echo "Waiting 30 seconds for Exchange asset propagation..."
+          sleep 30
+
+      - name: Deploy PAPI application to CloudHub 2.0
         id: deploy
         if: >-
           ${{
@@ -371,52 +595,77 @@ jobs:
           }}
         shell: bash
         env:
-          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
-          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
           ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
           ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
           CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
           PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
           PAPI_API_ID: ${{ vars.PAPI_API_ID }}
+          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
           ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
           ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
           MULE_KEY: ${{ secrets.MULE_KEY }}
         run: |
-          DEPLOY_LOG="$RUNNER_TEMP/papi-deployment.log"
           set +e
 
-          mvn \
-            --batch-mode \
-            --no-transfer-progress \
-            --settings "$HOME/.m2/settings.xml" \
-            clean deploy \
-            -DmuleDeploy \
-            -DskipMunitTests=true \
-            -e \
-            2>&1 | tee "$DEPLOY_LOG"
+          DEPLOY_LOG="$RUNNER_TEMP/papi-deployment.log"
+          : > "$DEPLOY_LOG"
 
-          MAVEN_EXIT_CODE=${PIPESTATUS[0]}
-          echo "deployment_exit_code=$MAVEN_EXIT_CODE" >> "$GITHUB_OUTPUT"
+          FINAL_EXIT_CODE=1
 
-          if [ "$MAVEN_EXIT_CODE" -ne 0 ]; then
+          for ATTEMPT in 1 2 3; do
+            echo "CloudHub deployment attempt $ATTEMPT of 3" \
+              | tee -a "$DEPLOY_LOG"
+
+            mvn \
+              --batch-mode \
+              --no-transfer-progress \
+              --settings "$HOME/.m2/settings.xml" \
+              mule:deploy \
+              -DskipMunitTests=true \
+              -e \
+              2>&1 | tee -a "$DEPLOY_LOG"
+
+            MAVEN_EXIT_CODE=${PIPESTATUS[0]}
+
+            if [ "$MAVEN_EXIT_CODE" -eq 0 ]; then
+              FINAL_EXIT_CODE=0
+              echo "CloudHub deployment completed successfully." \
+                | tee -a "$DEPLOY_LOG"
+              break
+            fi
+
+            if [ "$ATTEMPT" -lt 3 ]; then
+              echo "Deployment failed. Waiting 30 seconds before retry..." \
+                | tee -a "$DEPLOY_LOG"
+              sleep 30
+            fi
+          done
+
+          echo "deployment_exit_code=$FINAL_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ "$FINAL_EXIT_CODE" -ne 0 ]; then
             echo "============================================"
             echo "CloudHub deployment error summary"
             echo "============================================"
+
             grep \
               -nE \
-              "Caused by:|ERROR|Exception|Forbidden|Unauthorized|Bad Request|status code|Response code|provided GAV|not found|target|environment|vCores|replicas|applicationName|Failed to deploy|Exchange publication failed" \
+              "Caused by:|ERROR|Exception|Forbidden|Unauthorized|Bad Request|status code|Response code|provided GAV|no asset matching|not found|target|environment|Failed to deploy" \
               "$DEPLOY_LOG" \
               | tail -300 || true
           fi
 
-          exit "$MAVEN_EXIT_CODE"
+          exit "$FINAL_EXIT_CODE"
 
-      - name: Upload CloudHub deployment diagnostics
+      - name: Upload deployment diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: customer-process-api-deployment-diagnostics
-          path: ${{ runner.temp }}/papi-deployment.log
+          path: |
+            ${{ runner.temp }}/papi-exchange-publication.log
+            ${{ runner.temp }}/papi-deployment.log
           if-no-files-found: ignore
           retention-days: 14
 
@@ -437,8 +686,10 @@ jobs:
             echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Java: \`17\`"
             echo "- Maven: \`3.9.9\`"
-            echo "- MUnit exit code: \`${{ steps.munit.outputs.maven_exit_code }}\`"
-            echo "- Deployment exit code: \`${{ steps.deploy.outputs.deployment_exit_code || 'not executed' }}\`"
+            echo "- Application version: \`1.0.0\`"
+            echo "- MUnit exit code: \`${{ steps.munit.outputs.maven_exit_code || 'not executed' }}\`"
+            echo "- Exchange publication exit code: \`${{ steps.publish.outputs.publication_exit_code || 'not executed' }}\`"
+            echo "- CloudHub deployment exit code: \`${{ steps.deploy.outputs.deployment_exit_code || 'not executed' }}\`"
             echo "- Application: \`${PAPI_APPLICATION_NAME:-not configured}\`"
             echo "- Environment: \`${ANYPOINT_ENVIRONMENT:-not configured}\`"
             echo "- Target: \`${CLOUDHUB_TARGET:-not configured}\`"

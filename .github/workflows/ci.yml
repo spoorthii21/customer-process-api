@@ -25,13 +25,12 @@ permissions:
 
 jobs:
   ci:
-    name: Build, Test, Publish and Deploy PAPI
+    name: Build, Test, Package and Deploy PAPI
     runs-on: ubuntu-latest
 
     env:
       ANYPOINT_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
       ANYPOINT_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
-      MAVEN_VERSION: "3.9.9"
 
     steps:
       - name: Checkout repository
@@ -141,8 +140,7 @@ jobs:
               sys.exit(1)
 
           print(
-              "GitHub repository secrets successfully authenticated "
-              "the Anypoint Connected App."
+              "Connected App authentication succeeded."
           )
           PY
 
@@ -223,8 +221,7 @@ jobs:
           ET.parse(settings_path)
 
           print(
-              "Maven settings.xml created successfully "
-              "for anypoint-exchange-v3."
+              "Maven settings.xml created successfully."
           )
           PY
 
@@ -240,7 +237,13 @@ jobs:
               "~/.m2/settings.xml"
           )
 
-          root = ET.parse(settings_path).getroot()
+          try:
+              root = ET.parse(settings_path).getroot()
+          except (ET.ParseError, OSError) as exc:
+              print(
+                  f"::error::Unable to parse Maven settings.xml: {exc}"
+              )
+              sys.exit(1)
 
           namespace = {
               "m": "http://maven.apache.org/SETTINGS/1.0.0"
@@ -295,6 +298,11 @@ jobs:
             exit 1
           }
 
+          test -f src/main/mule/global.xml || {
+            echo "::error::src/main/mule/global.xml was not found."
+            exit 1
+          }
+
           test -d src/main/mule || {
             echo "::error::src/main/mule was not found."
             exit 1
@@ -340,35 +348,40 @@ jobs:
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
-          mule_directory = Path("src/main/mule")
+          file_path = Path(
+              "src/main/mule/global.xml"
+          )
+
+          if not file_path.is_file():
+              print(
+                  "::error::src/main/mule/global.xml was not found"
+              )
+              sys.exit(1)
+
+          try:
+              root = ET.parse(file_path).getroot()
+          except ET.ParseError as exc:
+              print(
+                  f"::error::global.xml is not valid XML: {exc}"
+              )
+              sys.exit(1)
 
           autodiscovery = None
-          autodiscovery_file = None
 
-          for file_path in sorted(mule_directory.glob("*.xml")):
-              try:
-                  root = ET.parse(file_path).getroot()
-              except ET.ParseError as exc:
-                  print(
-                      f"::error::{file_path} is not valid XML: {exc}"
-                  )
-                  sys.exit(1)
+          for element in root.iter():
+              local_name = element.tag.split("}")[-1].lower()
 
-              for element in root.iter():
-                  local_name = element.tag.split("}")[-1].lower()
-
-                  if local_name in ("autodiscovery", "discovery"):
-                      autodiscovery = element
-                      autodiscovery_file = file_path
-                      break
-
-              if autodiscovery is not None:
+              if local_name in (
+                  "autodiscovery",
+                  "discovery"
+              ):
+                  autodiscovery = element
                   break
 
           if autodiscovery is None:
               print(
-                  "::error::API Autodiscovery element was not found "
-                  "in src/main/mule XML files"
+                  "::error::API Autodiscovery element was not "
+                  "found in src/main/mule/global.xml"
               )
               sys.exit(1)
 
@@ -388,15 +401,19 @@ jobs:
 
           if not re.fullmatch(r"[0-9]+", api_id):
               print(
-                  "::error::Autodiscovery apiId must contain only "
-                  "the numeric API Instance ID"
+                  "::error::Autodiscovery apiId must be a "
+                  "hardcoded numeric API Instance ID"
               )
               sys.exit(1)
 
-          if flow_ref != "customer-process-apiraml-main":
+          expected_flow_ref = (
+              "customer-process-apiraml-main"
+          )
+
+          if flow_ref != expected_flow_ref:
               print(
                   "::error::Autodiscovery flowRef must be "
-                  "customer-process-apiraml-main"
+                  f"{expected_flow_ref}, but found: {flow_ref}"
               )
               sys.exit(1)
 
@@ -404,18 +421,9 @@ jobs:
               "Customer Process API Autodiscovery "
               "configuration is valid."
           )
-
-          print(
-              f"Autodiscovery file: {autodiscovery_file}"
-          )
-
-          print(
-              f"Autodiscovery API ID: {api_id}"
-          )
-
-          print(
-              f"Autodiscovery flowRef: {flow_ref}"
-          )
+          print(f"Autodiscovery file: {file_path}")
+          print(f"API Instance ID: {api_id}")
+          print(f"Autodiscovery flowRef: {flow_ref}")
           PY
 
       - name: Clear incompatible cached Maven libraries
@@ -443,17 +451,7 @@ jobs:
 
           echo "Conflicting cached Maven libraries were removed."
 
-      - name: Maven validate
-        shell: bash
-        run: |
-          mvn \
-            --batch-mode \
-            --no-transfer-progress \
-            --update-snapshots \
-            --settings "$HOME/.m2/settings.xml" \
-            validate
-
-      - name: Run MUnit tests and coverage
+      - name: Run MUnit tests and package Mule application
         id: munit
         shell: bash
         run: |
@@ -464,8 +462,9 @@ jobs:
           mvn \
             --batch-mode \
             --no-transfer-progress \
+            --update-snapshots \
             --settings "$HOME/.m2/settings.xml" \
-            clean test \
+            clean package \
             2>&1 | tee "$MUNIT_LOG"
 
           MAVEN_EXIT_CODE=${PIPESTATUS[0]}
@@ -479,7 +478,7 @@ jobs:
 
           grep \
             -nE \
-            "FAILURE|ERROR|Tests run:|Failed:|Errors:|Skipped:|Caused by:|AssertionError|Expected:|but:|Failed to deploy|There was.*error|BUILD FAILURE" \
+            "FAILURE|ERROR|Tests run:|Failed:|Errors:|Skipped:|Caused by:|AssertionError|Expected:|but:|Failed to deploy|There was.*error|BUILD FAILURE|BUILD SUCCESS" \
             "$MUNIT_LOG" \
             | tail -250 || true
 
@@ -571,17 +570,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Package Mule application
-        if: success()
-        shell: bash
-        run: |
-          mvn \
-            --batch-mode \
-            --no-transfer-progress \
-            --settings "$HOME/.m2/settings.xml" \
-            package \
-            -DskipMunitTests=true
-
       - name: Locate deployable Mule application JAR
         if: success()
         id: locate_jar
@@ -654,12 +642,14 @@ jobs:
           ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
           CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
           PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          PAPI_API_ID: ${{ vars.PAPI_API_ID }}
         run: |
           REQUIRED_VARIABLES=(
             ANYPOINT_ORG_ID
             ANYPOINT_ENVIRONMENT
             CLOUDHUB_TARGET
             PAPI_APPLICATION_NAME
+            PAPI_API_ID
           )
 
           MISSING=0
@@ -675,10 +665,16 @@ jobs:
             exit 1
           fi
 
+          if ! [[ "$PAPI_API_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::PAPI_API_ID must contain only numbers"
+            exit 1
+          fi
+
           echo "CloudHub 2.0 deployment variables are available."
           echo "Environment: $ANYPOINT_ENVIRONMENT"
           echo "Target: $CLOUDHUB_TARGET"
           echo "Application: $PAPI_APPLICATION_NAME"
+          echo "PAPI API ID is numeric."
 
       - name: Validate deployment and runtime secrets
         if: >-
@@ -718,7 +714,7 @@ jobs:
 
           echo "Deployment credentials and runtime secrets are available."
 
-      - name: Publish PAPI application to Anypoint Exchange
+      - name: Publish and deploy PAPI to CloudHub 2.0
         if: >-
           ${{
             github.event_name == 'workflow_dispatch' &&
@@ -733,40 +729,12 @@ jobs:
           ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
           CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
           PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
+          PAPI_API_ID: ${{ vars.PAPI_API_ID }}
           ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
           ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
           MULE_KEY: ${{ secrets.MULE_KEY }}
         run: |
-          echo "Publishing Customer Process API to Anypoint Exchange..."
-
-          mvn \
-            --batch-mode \
-            --no-transfer-progress \
-            --settings "$HOME/.m2/settings.xml" \
-            deploy \
-            -DskipMuleDeploy \
-            -DskipTests
-
-      - name: Deploy PAPI application to CloudHub 2.0
-        if: >-
-          ${{
-            github.event_name == 'workflow_dispatch' &&
-            github.ref == 'refs/heads/main' &&
-            inputs.deploy == true
-          }}
-        shell: bash
-        env:
-          CONNECTED_APP_CLIENT_ID: ${{ secrets.ANYPOINT_CLIENT_ID }}
-          CONNECTED_APP_CLIENT_SECRET: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
-          ANYPOINT_ORG_ID: ${{ vars.ANYPOINT_ORG_ID }}
-          ANYPOINT_ENVIRONMENT: ${{ vars.ANYPOINT_ENVIRONMENT }}
-          CLOUDHUB_TARGET: ${{ vars.CLOUDHUB_TARGET }}
-          PAPI_APPLICATION_NAME: ${{ vars.PAPI_APPLICATION_NAME }}
-          ANYPOINT_PLATFORM_CLIENT_ID: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_ID }}
-          ANYPOINT_PLATFORM_CLIENT_SECRET: ${{ secrets.ANYPOINT_PLATFORM_CLIENT_SECRET }}
-          MULE_KEY: ${{ secrets.MULE_KEY }}
-        run: |
-          echo "Deploying Customer Process API to CloudHub 2.0..."
+          echo "Publishing and deploying Customer Process API..."
           echo "Application: $PAPI_APPLICATION_NAME"
           echo "Environment: $ANYPOINT_ENVIRONMENT"
           echo "Target: $CLOUDHUB_TARGET"
@@ -775,8 +743,9 @@ jobs:
             --batch-mode \
             --no-transfer-progress \
             --settings "$HOME/.m2/settings.xml" \
-            mule:deploy \
-            -DskipTests
+            clean deploy \
+            -DmuleDeploy \
+            -DskipMunitTests=true
 
       - name: Write workflow summary
         if: always()
@@ -800,16 +769,16 @@ jobs:
             echo "- Application: \`${PAPI_APPLICATION_NAME:-not configured}\`"
             echo "- Environment: \`${ANYPOINT_ENVIRONMENT:-not configured}\`"
             echo "- Target: \`${CLOUDHUB_TARGET:-not configured}\`"
-            echo "- API Autodiscovery flow: \`customer-process-apiraml-main\`"
+            echo "- Autodiscovery file: \`src/main/mule/global.xml\`"
             echo "- Deployment requested: \`$DEPLOY_REQUESTED\`"
 
             if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && \
                [ "$GITHUB_REF" = "refs/heads/main" ] && \
                [ "$DEPLOY_REQUESTED" = "true" ]; then
-              echo "- Exchange publishing: \`Enabled\`"
+              echo "- Exchange publication: \`Enabled\`"
               echo "- CloudHub 2.0 deployment: \`Enabled\`"
             else
-              echo "- Exchange publishing: \`Not executed\`"
+              echo "- Exchange publication: \`Not executed\`"
               echo "- CloudHub 2.0 deployment: \`Not executed\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

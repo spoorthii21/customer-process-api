@@ -3,8 +3,8 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="
-            http://maven.apache.org/POM/4.0.0
-            https://maven.apache.org/xsd/maven-4.0.0.xsd">
+             http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -41,9 +41,7 @@
 
         <!--
             Skip the Mule Maven Plugin Java support-matrix lookup.
-
-            Mule Runtime 4.12.2 is configured to use Java 17 in
-            mule-artifact.json.
+            Java 17 support must remain declared in mule-artifact.json.
         -->
         <skipJavaVersionValidation>
             true
@@ -54,22 +52,18 @@
         <!-- CloudHub 2.0 Deployment Properties                    -->
         <!-- ===================================================== -->
 
-        <!-- Root organization or business-group ID -->
         <anypoint.org.id>
             ${env.ANYPOINT_ORG_ID}
         </anypoint.org.id>
 
-        <!-- Anypoint environment name -->
         <cloudhub.environment>
             ${env.ANYPOINT_ENVIRONMENT}
         </cloudhub.environment>
 
-        <!-- CloudHub 2.0 shared-space or private-space target -->
         <cloudhub.target>
             ${env.CLOUDHUB_TARGET}
         </cloudhub.target>
 
-        <!-- Runtime Manager application name -->
         <cloudhub.application.name>
             ${env.PAPI_APPLICATION_NAME}
         </cloudhub.application.name>
@@ -79,7 +73,10 @@
         <!-- API Manager Autodiscovery                             -->
         <!-- ===================================================== -->
 
-        <!-- Numeric API Manager instance ID -->
+        <!--
+            This value can remain even though global.xml contains
+            the same hardcoded numeric API instance ID.
+        -->
         <api.id>
             ${env.PAPI_API_ID}
         </api.id>
@@ -89,10 +86,6 @@
         <!-- Runtime Platform Credentials                          -->
         <!-- ===================================================== -->
 
-        <!--
-            Environment credentials used by the deployed Mule
-            runtime to communicate with API Manager.
-        -->
         <anypoint.platform.client.id>
             ${env.ANYPOINT_PLATFORM_CLIENT_ID}
         </anypoint.platform.client.id>
@@ -121,10 +114,7 @@
 
         <plugins>
 
-            <!-- ================================================= -->
-            <!-- Maven Clean Plugin                                -->
-            <!-- ================================================= -->
-
+            <!-- Maven Clean Plugin -->
             <plugin>
 
                 <groupId>
@@ -183,34 +173,29 @@
 
                         <provider>MC</provider>
 
-                        <!-- Organization or business-group ID -->
                         <businessGroupId>
                             ${anypoint.org.id}
                         </businessGroupId>
 
-                        <!-- Anypoint environment -->
                         <environment>
                             ${cloudhub.environment}
                         </environment>
 
-                        <!-- CloudHub 2.0 deployment target -->
                         <target>
                             ${cloudhub.target}
                         </target>
 
-                        <!-- Mule runtime version -->
                         <muleVersion>
                             ${app.runtime}
                         </muleVersion>
 
-                        <!-- Runtime Manager application name -->
                         <applicationName>
                             ${cloudhub.application.name}
                         </applicationName>
 
 
                         <!-- ===================================== -->
-                        <!-- Maven Deployment Authentication       -->
+                        <!-- Connected App Deployment Credentials  -->
                         <!-- ===================================== -->
 
                         <connectedAppClientId>
@@ -227,7 +212,7 @@
 
 
                         <!-- ===================================== -->
-                        <!-- CloudHub 2.0 Runtime Allocation       -->
+                        <!-- Runtime Allocation                    -->
                         <!-- ===================================== -->
 
                         <replicas>1</replicas>
@@ -236,18 +221,17 @@
 
 
                         <!-- ===================================== -->
-                        <!-- Normal Runtime Properties             -->
+                        <!-- Runtime Application Properties        -->
                         <!-- ===================================== -->
 
                         <properties>
 
                             <!--
-                                API Manager instance ID used by:
+                                This runtime property is retained for
+                                consistency with the GitHub variable.
 
-                                <api-gateway:autodiscovery
-                                    apiId="${api.id}"
-                                    flowRef=
-                                        "customer-process-apiraml-main"/>
+                                global.xml can continue using its
+                                hardcoded numeric API instance ID.
                             -->
                             <api.id>
                                 ${api.id}
@@ -262,28 +246,14 @@
 
                         <secureProperties>
 
-                            <!--
-                                Platform environment Client ID used
-                                by Mule Gateway for API Manager
-                                pairing.
-                            -->
                             <anypoint.platform.client_id>
                                 ${anypoint.platform.client.id}
                             </anypoint.platform.client_id>
 
-                            <!--
-                                Platform environment Client Secret
-                                used by Mule Gateway for API Manager
-                                pairing.
-                            -->
                             <anypoint.platform.client_secret>
                                 ${anypoint.platform.client.secret}
                             </anypoint.platform.client_secret>
 
-                            <!--
-                                Decryption key for Mule Secure
-                                Configuration Properties.
-                            -->
                             <mule.key>
                                 ${mule.key}
                             </mule.key>
@@ -355,7 +325,7 @@
 
 
     <!-- ========================================================= -->
-    <!-- Anypoint Exchange Publishing                              -->
+    <!-- Anypoint Exchange Publication                             -->
     <!-- ========================================================= -->
 
     <distributionManagement>
@@ -378,6 +348,24 @@
 
         </repository>
 
+        <snapshotRepository>
+
+            <id>
+                anypoint-exchange-v3
+            </id>
+
+            <name>
+                Anypoint Exchange Snapshot Repository
+            </name>
+
+            <url>
+                https://maven.anypoint.mulesoft.com/api/v3/organizations/${anypoint.org.id}/maven
+            </url>
+
+            <layout>default</layout>
+
+        </snapshotRepository>
+
     </distributionManagement>
 
 
@@ -387,10 +375,7 @@
 
     <dependencies>
 
-        <!-- ===================================================== -->
-        <!-- HTTP Connector                                        -->
-        <!-- ===================================================== -->
-
+        <!-- HTTP Connector -->
         <dependency>
 
             <groupId>
@@ -410,10 +395,7 @@
         </dependency>
 
 
-        <!-- ===================================================== -->
-        <!-- Sockets Connector                                     -->
-        <!-- ===================================================== -->
-
+        <!-- Sockets Connector -->
         <dependency>
 
             <groupId>
@@ -433,10 +415,7 @@
         </dependency>
 
 
-        <!-- ===================================================== -->
-        <!-- Customer Process API RAML                             -->
-        <!-- ===================================================== -->
-
+        <!-- Customer Process API RAML -->
         <dependency>
 
             <groupId>
@@ -458,10 +437,7 @@
         </dependency>
 
 
-        <!-- ===================================================== -->
-        <!-- APIKit Module                                         -->
-        <!-- ===================================================== -->
-
+        <!-- APIKit Module -->
         <dependency>
 
             <groupId>
@@ -481,10 +457,7 @@
         </dependency>
 
 
-        <!-- ===================================================== -->
-        <!-- MUnit Runner                                          -->
-        <!-- ===================================================== -->
-
+        <!-- MUnit Runner -->
         <dependency>
 
             <groupId>
@@ -508,10 +481,7 @@
         </dependency>
 
 
-        <!-- ===================================================== -->
-        <!-- MUnit Tools                                           -->
-        <!-- ===================================================== -->
-
+        <!-- MUnit Tools -->
         <dependency>
 
             <groupId>
@@ -565,7 +535,7 @@
             </releases>
 
             <snapshots>
-                <enabled>false</enabled>
+                <enabled>true</enabled>
             </snapshots>
 
         </repository>
